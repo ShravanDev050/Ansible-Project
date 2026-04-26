@@ -1,0 +1,81 @@
+---
+# Example: Deploy new Active Directory forest on Windows Server
+# This playbook demonstrates installing a new AD forest on Windows Server 2019/2022
+
+- name: Deploy Active Directory Forest on Windows
+  hosts: ad_servers_windows
+  gather_facts: yes
+  collections:
+    - common_tools.infrastructure
+  
+  vars_files:
+    - vars/vault.yml  # Contains vault encrypted AD passwords
+  
+  vars:
+    # AD Forest Configuration
+    ad_domain_name: "corp.example.com"
+    ad_domain_netbios_name: "CORP"
+    ad_forest_level: "2019"
+    ad_domain_level: "2019"
+    ad_admin_password: "{{ vault_ad_admin_password }}"
+    ad_dsrm_password: "{{ vault_dsrm_password }}"
+    
+    # DNS Configuration
+    ad_install_dns: true
+    ad_dns_forwarder_ips:
+      - "8.8.8.8"
+      - "8.8.4.4"
+    
+    # DHCP Configuration (optional)
+    ad_install_dhcp: false
+    
+    # NTP Configuration
+    ad_configure_ntp: true
+    ad_ntp_servers:
+      - "0.pool.ntp.org"
+      - "1.pool.ntp.org"
+    
+    # Firewall Configuration
+    ad_configure_firewall: true
+    ad_allow_management_ips:
+      - "192.168.1.0/24"  # Management network
+    
+    # Audit Logging
+    ad_enable_audit_logging: true
+    ad_audit_retention_days: 365
+    
+    # Post-Installation Configuration
+    ad_create_default_groups: true
+    ad_default_ou_path: "OU=Managed,DC=corp,DC=example,DC=com"
+  
+  pre_tasks:
+    - name: Validate variables
+      assert:
+        that:
+          - ad_domain_name is defined
+          - ad_admin_password is defined
+          - ad_domain_netbios_name is defined
+        fail_msg: "Required variables not defined"
+    
+    - name: Display deployment summary
+      debug:
+        msg:
+          - "AD Deployment Summary"
+          - "Domain: {{ ad_domain_name }}"
+          - "Forest Level: {{ ad_forest_level }}"
+          - "Domain Level: {{ ad_domain_level }}"
+          - "Install DNS: {{ ad_install_dns }}"
+          - "Install DHCP: {{ ad_install_dhcp }}"
+  
+  roles:
+    - ad
+  
+  post_tasks:
+    - name: Wait for AD to be ready
+      wait_for_connection:
+        delay: 10
+        timeout: 300
+    
+    - name: Verify AD deployment
+      debug:
+        msg: "Active Directory forest deployment completed successfully"

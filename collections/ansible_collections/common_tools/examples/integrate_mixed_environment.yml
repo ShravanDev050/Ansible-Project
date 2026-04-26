@@ -1,0 +1,158 @@
+---
+# Example: Mixed Environment Integration
+# This playbook demonstrates deploying AD forest and integrating both Windows and Linux servers
+
+- name: "Phase 1: Deploy AD Forest"
+  hosts: ad_servers
+  gather_facts: yes
+  collections:
+    - common_tools.infrastructure
+  
+  vars_files:
+    - vars/vault.yml
+  
+  vars:
+    ad_domain_name: "corp.example.com"
+    ad_domain_netbios_name: "CORP"
+    ad_forest_level: "2019"
+    ad_domain_level: "2019"
+    ad_admin_password: "{{ vault_ad_admin_password }}"
+    ad_install_dns: true
+    ad_install_dhcp: false
+    ad_configure_ntp: true
+  
+  roles:
+    - ad
+  
+  post_tasks:
+    - name: Wait for AD services to stabilize
+      pause:
+        seconds: 60
+      run_once: yes
+
+---
+
+- name: "Phase 2: Join Windows Servers to Domain"
+  hosts: windows_servers
+  gather_facts: yes
+  collections:
+    - common_tools.infrastructure
+  
+  vars_files:
+    - vars/vault.yml
+  
+  vars:
+    ad_domain: "corp.example.com"
+    ad_domain_netbios: "CORP"
+    ad_ad_server: "{{ groups['ad_servers'][0] }}"
+    ad_username: "domain_joiner"
+    ad_password: "{{ vault_domain_joiner_password }}"
+    ad_dns_servers:
+      - "{{ hostvars[groups['ad_servers'][0]]['ansible_default_ipv4']['address'] }}"
+    ad_configure_dns: true
+    ad_configure_ntp: true
+    ad_configure_firewall: true
+  
+  roles:
+    - ad-integration
+  
+  post_tasks:
+    - name: Wait for Windows domain integration
+      wait_for_connection:
+        delay: 30
+        timeout: 300
+
+---
+
+- name: "Phase 3: Join Linux Servers to Domain"
+  hosts: linux_servers
+  become: yes
+  gather_facts: yes
+  collections:
+    - common_tools.infrastructure
+  
+  vars_files:
+    - vars/vault.yml
+  
+  vars:
+    ad_domain: "corp.example.com"
+    ad_domain_netbios: "CORP"
+    ad_ad_server: "{{ groups['ad_servers'][0] }}"
+    ad_username: "ansible_joiner"
+    ad_password: "{{ vault_ansible_password }}"
+    ad_linux_ad_backend: "sssd"
+    ad_dns_servers:
+      - "{{ hostvars[groups['ad_servers'][0]]['ansible_default_ipv4']['address'] }}"
+    ad_configure_dns: true
+    ad_configure_ntp: true
+    ad_configure_firewall: true
+    ad_configure_ssh: true
+    ad_configure_sudoers: true
+    ad_local_admin_groups:
+      - "Unix Admins"
+  
+  roles:
+    - ad-integration
+  
+  post_tasks:
+    - name: Verify Linux domain integration
+      shell: id domain_user@corp.example.com
+      register: linux_integration
+      ignore_errors: yes
+      changed_when: false
+
+---
+
+- name: "Phase 4: Verification and Reporting"
+  hosts: localhost
+  gather_facts: no
+  collections:
+    - common_tools.infrastructure
+  
+  tasks:
+    - name: Verify all servers are domain members
+      debug:
+        msg:
+          - "=== Domain Integration Summary ==="
+          - "AD Forest: corp.example.com"
+          - "Windows Servers Integrated: {{ groups['windows_servers'] | default([]) | length }}"
+          - "Linux Servers Integrated: {{ groups['linux_servers'] | default([]) | length }}"
+          - "Total Integrated: {{ (groups['windows_servers'] | default([]) | length) + (groups['linux_servers'] | default([]) | length) }}"
+          - ""
+          - "Next steps:"
+          - "1. Verify user logins from AD"
+          - "2. Test Group Policy on Windows servers"
+          - "3. Verify sudo access on Linux servers"
+          - "4. Configure additional security policies"
+    
+    - name: Generate integration report
+      copy:
+        content: |
+          # Active Directory Integration Report
+          ## Summary
+          - Date: {{ ansible_date_time.iso8601 }}
+          - Domain: corp.example.com
+          - AD Servers: {{ groups['ad_servers'] | default([]) }}
+          - Windows Servers: {{ groups['windows_servers'] | default([]) }}
+          - Linux Servers: {{ groups['linux_servers'] | default([]) }}
+          
+          ## Integration Status
+          See Ansible execution logs for detailed status of each server.
+          
+          ## Verification Steps
+          1. Test domain user login on Windows:
+             - net user /domain
+             - whoami /groups
+          
+          2. Test domain user login on Linux:
+             - id domain_user@corp.example.com
+             - getent passwd domain_user@corp.example.com
+          
+          3. Test Kerberos on Linux:
+             - kinit -k
+             - klist
+          
+          4. Test LDAP connectivity:
+             - ldapwhoami -H ldaps://dc.corp.example.com
+        dest: "./ad-integration-report-{{ ansible_date_time.iso8601 }}.md"
+      delegate_to: localhost

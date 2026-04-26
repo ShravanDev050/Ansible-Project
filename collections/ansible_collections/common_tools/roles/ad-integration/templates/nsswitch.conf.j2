@@ -1,0 +1,40 @@
+# This file is managed by Ansible
+# nsswitch configuration for AD integration
+# Generated: {{ ansible_date_time.iso8601 }}
+
+# /etc/nsswitch.conf
+#
+# Example configuration of GNU Name Service Switch functionality.
+# If you have the `glibc-doc-reference' and `info' packages installed, try:
+# `info libc "Name Service Switch"' for information about this file.
+
+# passwd:         files systemd sss
+{% if ad_linux_use_sssd %}
+passwd:         files sss
+group:          files sss
+shadow:         files sss
+gshadow:        files sss
+{% else %}
+passwd:         files compat
+group:          files compat
+shadow:         files compat
+gshadow:        files compat
+{% endif %}
+
+# hosts:          files dns wins
+hosts:          files dns
+networks:       files
+protocols:      db files
+services:       db files
+ethers:         db files
+rpc:            db files
+
+{% if ad_linux_use_sssd %}
+# SSSD support for sudoers
+sudoers:        sss files
+{% else %}
+sudoers:        files
+{% endif %}
+
+# netgroup:      nis
+netgroup:       files

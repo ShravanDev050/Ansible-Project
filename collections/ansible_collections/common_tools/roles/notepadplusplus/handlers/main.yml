@@ -1,0 +1,79 @@
+---
+# Handlers for Notepad++ installation role
+
+- name: Update shortcut
+  win_shell: |
+    $shell = New-Object -ComObject WScript.Shell
+    $shortcut = $shell.CreateShortcut("{{ notepadplusplus_shortcut_path }}")
+    $shortcut.TargetPath = "{{ notepadplusplus_exe_path }}"
+    $shortcut.Save()
+  listen: "update notepad++ shortcut"
+
+- name: Clear temporary files
+  win_shell: |
+    Remove-Item -Path "{{ notepadplusplus_download_dir }}\npp.*" -Force -ErrorAction SilentlyContinue
+    Remove-Item -Path "{{ notepadplusplus_download_dir }}\notepad++*" -Force -ErrorAction SilentlyContinue
+  listen: "cleanup notepad++ temp files"
+
+- name: Verify executable
+  win_stat:
+    path: "{{ notepadplusplus_exe_path }}"
+  register: exe_stat
+  listen: "verify notepad++ executable"
+
+- name: Add to PATH
+  win_path:
+    elements: "{{ notepadplusplus_install_path }}"
+    scope: machine
+    state: present
+  listen: "add notepad++ to path"
+
+- name: Create desktop shortcut
+  win_shell: |
+    $desktop = [Environment]::GetFolderPath('Desktop')
+    $shell = New-Object -ComObject WScript.Shell
+    $shortcut = $shell.CreateShortcut("$desktop\Notepad++.lnk")
+    $shortcut.TargetPath = "{{ notepadplusplus_exe_path }}"
+    $shortcut.WorkingDirectory = "$env:USERPROFILE"
+    $shortcut.IconLocation = "{{ notepadplusplus_exe_path }}, 0"
+    $shortcut.Save()
+  listen: "create desktop shortcut"
+
+- name: Create start menu shortcut
+  win_shell: |
+    $startMenu = [Environment]::GetFolderPath('StartMenu')
+    $programsPath = Join-Path $startMenu "Programs"
+    $shell = New-Object -ComObject WScript.Shell
+    $shortcut = $shell.CreateShortcut("$programsPath\Notepad++.lnk")
+    $shortcut.TargetPath = "{{ notepadplusplus_exe_path }}"
+    $shortcut.WorkingDirectory = "$env:USERPROFILE"
+    $shortcut.IconLocation = "{{ notepadplusplus_exe_path }}, 0"
+    $shortcut.Description = "Notepad++ - Text Editor"
+    $shortcut.Save()
+  listen: "create start menu shortcut"
+
+- name: Backup configuration
+  win_shell: |
+    $appdata = [Environment]::GetFolderPath('ApplicationData')
+    $source = "$appdata\Notepad++"
+    if (Test-Path $source) {
+      $timestamp = Get-Date -Format "yyyyMMdd-HHmmss"
+      $backupPath = "{{ notepadplusplus_config_backup_dir }}"
+      if (-not (Test-Path $backupPath)) {
+        New-Item -ItemType Directory -Path $backupPath -Force | Out-Null
+      }
+      $zipPath = "$backupPath\notepadplusplus-config-backup-$timestamp.zip"
+      [System.IO.Compression.ZipFile]::CreateFromDirectory($source, $zipPath)
+    }
+  listen: "backup notepad++ config"
+
+- name: Refresh environment variables
+  win_shell: |
+    $env:Path = [System.Environment]::GetEnvironmentVariable("Path","Machine") + ";" + [System.Environment]::GetEnvironmentVariable("Path","User")
+  listen: "refresh environment variables"
+
+- name: Log installation completion
+  win_shell: |
+    "Notepad++ installation completed successfully" | Add-Content -Path "{{ notepadplusplus_log_dir }}\notepadplusplus-install.log"
+  listen: "log installation"
+  when: notepadplusplus_enable_logging

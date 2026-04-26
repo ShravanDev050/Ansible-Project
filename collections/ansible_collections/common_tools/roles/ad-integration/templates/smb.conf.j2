@@ -1,0 +1,65 @@
+# This file is managed by Ansible
+# Samba configuration for AD integration (Winbind)
+# Generated: {{ ansible_date_time.iso8601 }}
+
+[global]
+  # Identity mapping configuration
+  workgroup = {{ ad_domain_netbios }}
+  realm = {{ ad_kerberos_realm }}
+  security = ads
+  
+  # Kerberos
+  kerberos method = secrets and keytab
+  
+  # Winbind configuration
+  winbind separator = +
+  winbind enum users = {{ ad_enumerate_users | lower }}
+  winbind enum groups = {{ ad_enumerate_groups | lower }}
+  winbind use default domain = {{ ad_winbind_use_default_domain | lower }}
+  winbind trusted domains only = no
+  winbind nested groups = yes
+  
+  # Template settings for AD users and groups
+  template shell = {{ ad_linux_shell_for_ad_users }}
+  template homedir = {{ ad_winbind_template_homedir }}
+  
+  # Refresh interval for cache
+  cache offline logons = true
+  offline logon cache = 60
+  
+  # Nameserver
+  server string = Samba Server
+  netbios name = {{ ansible_hostname | upper }}
+  
+  # Logs
+  log file = /var/log/samba/log.%m
+  max log size = 50
+  
+  # Domain membership
+  password server = {{ ad_ad_server }}
+  ad_homedir_umask = 0077
+  
+  # Idmap configuration for AD
+  idmap config *:backend = tdb
+  idmap config *:range = 3000-7999
+  idmap config {{ ad_domain_netbios }}:backend = rid
+  idmap config {{ ad_domain_netbios }}:range = 10000-200000
+  
+  # Session management
+  smbd max mux = 50
+  deadtime = 15
+  
+  # Allow machine accounts to change their passwords
+  machine password timeout = 604800
+  
+  # Kerberos keytab location
+  kerberos keytab = /etc/krb5.keytab
+
+# Define shares if needed
+[homes]
+  comment = Home Directories
+  browseable = yes
+  writable = yes
+  create mask = 0755
+  directory mask = 0755
+  public = no

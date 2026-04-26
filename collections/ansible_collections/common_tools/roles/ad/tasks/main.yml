@@ -1,0 +1,59 @@
+#SPDX-License-Identifier: MIT-0
+---
+# tasks file for ad - main orchestration
+
+- name: "Gather system facts"
+  setup:
+  delegate_to: "{{ inventory_hostname }}"
+
+- name: "Display role information"
+  debug:
+    msg: |
+      Active Directory Installation Role
+      OS Family: {{ ansible_os_family }}
+      Platform: {{ ansible_system }}
+      Hostname: {{ ansible_hostname }}
+
+- name: "Pre-installation checks block"
+  block:
+    - name: "Include pre-checks tasks"
+      include_tasks: "pre_checks.yml"
+      when: ad_perform_pre_checks | bool
+
+  rescue:
+    - name: "Display pre-check error"
+      debug:
+        msg: "Pre-checks failed. Please review the errors above."
+      failed_when: true
+
+- name: "OS-specific installation block"
+  block:
+    - name: "Windows Active Directory installation"
+      include_tasks: "windows.yml"
+      when: ad_is_windows | bool
+
+    - name: "Linux Active Directory installation (Samba)"
+      include_tasks: "linux.yml"
+      when: ad_is_linux | bool
+
+  rescue:
+    - name: "Display installation error"
+      debug:
+        msg: "Installation failed. Please review the errors above."
+      failed_when: true
+
+- name: "Post-installation configuration"
+  block:
+    - name: "Include post-installation tasks"
+      include_tasks: "post_installation.yml"
+
+  rescue:
+    - name: "Display post-installation error"
+      debug:
+        msg: "Post-installation configuration failed. Please review the errors above."
+      failed_when: true
+
+- name: "Role completion message"
+  debug:
+    msg: "Active Directory installation and configuration completed successfully!"
+

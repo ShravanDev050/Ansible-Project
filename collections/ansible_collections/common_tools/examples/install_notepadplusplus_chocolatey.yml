@@ -1,0 +1,52 @@
+---
+# Example: Install Notepad++ using Chocolatey
+# Simple installation using Chocolatey package manager
+
+- name: Install Notepad++ via Chocolatey
+  hosts: windows_servers
+  gather_facts: yes
+  collections:
+    - common_tools.infrastructure
+  
+  vars:
+    # Installation method
+    notepadplusplus_install_method: "chocolatey"
+    
+    # Version (use 'latest' for most recent)
+    notepadplusplus_version: "latest"
+    
+    # Shortcuts configuration
+    notepadplusplus_create_shortcut: true
+    notepadplusplus_create_desktop_shortcut: false
+    
+    # Additional configuration
+    notepadplusplus_enable_logging: true
+    notepadplusplus_log_dir: "C:\\Logs\\Notepad++"
+    
+    # Backup before installation
+    notepadplusplus_backup_config: true
+    notepadplusplus_config_backup_dir: "C:\\Backups\\Notepad++"
+  
+  pre_tasks:
+    - name: Display installation summary
+      debug:
+        msg:
+          - "Installing Notepad++ on {{ inventory_hostname }}"
+          - "Installation Method: {{ notepadplusplus_install_method }}"
+          - "Version: {{ notepadplusplus_version }}"
+  
+  roles:
+    - notepadplusplus
+  
+  post_tasks:
+    - name: Verify installation
+      win_shell: |
+        & "C:\Program Files\Notepad++\notepad++.exe" -v
+      register: version_check
+      ignore_errors: yes
+    
+    - name: Display final status
+      debug:
+        msg:
+          - "Installation completed successfully"
+          - "Notepad++ is ready to use"

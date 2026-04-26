@@ -1,0 +1,81 @@
+#SPDX-License-Identifier: MIT-0
+---
+# tasks file for ad-integration - main orchestration
+
+- name: "Gather system facts"
+  setup:
+  delegate_to: "{{ inventory_hostname }}"
+
+- name: "Display role information"
+  debug:
+    msg: |
+      Active Directory Integration Role
+      OS Family: {{ ansible_os_family }}
+      Platform: {{ ansible_system }}
+      Hostname: {{ ansible_hostname }}
+      Domain: {{ ad_domain }}
+
+- name: "Backup existing configuration"
+  block:
+    - name: "Include configuration backup tasks"
+      include_tasks: "backup_configuration.yml"
+      when: ad_backup_configuration | bool
+
+  rescue:
+    - name: "Display backup error"
+      debug:
+        msg: "Configuration backup failed: {{ ansible_failed_result.msg }}"
+      when: not ad_rollback_on_failure | bool
+
+- name: "Pre-integration checks block"
+  block:
+    - name: "Include pre-checks tasks"
+      include_tasks: "pre_checks.yml"
+      when: ad_perform_pre_checks | bool
+
+  rescue:
+    - name: "Display pre-check error"
+      debug:
+        msg: "Pre-checks failed. Please review the errors above."
+      failed_when: true
+
+- name: "OS-specific integration block"
+  block:
+    - name: "Windows Active Directory integration"
+      include_tasks: "windows.yml"
+      when: ad_is_windows | bool
+
+    - name: "Linux Active Directory integration"
+      include_tasks: "linux.yml"
+      when: ad_is_linux | bool
+
+  rescue:
+    - name: "Display integration error"
+      debug:
+        msg: "AD integration failed. Please review the errors above."
+      failed_when: "{{ ad_rollback_on_failure | bool }}"
+
+- name: "Post-integration configuration"
+  block:
+    - name: "Include post-integration tasks"
+      include_tasks: "post_integration.yml"
+
+  rescue:
+    - name: "Display post-integration error"
+      debug:
+        msg: "Post-integration configuration failed. Please review the errors above."
+
+- name: "Integration verification"
+  block:
+    - name: "Include verification tasks"
+      include_tasks: "verify_integration.yml"
+      when: ad_verify_integration | bool
+
+  rescue:
+    - name: "Display verification error"
+      debug:
+        msg: "Integration verification completed with warnings. Please review manually."
+
+- name: "Role completion message"
+  debug:
+    msg: "Active Directory integration completed successfully! System is now part of {{ ad_domain }} domain."

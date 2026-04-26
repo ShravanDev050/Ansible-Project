@@ -1,0 +1,64 @@
+---
+# Main task file for Notepad++ installation role
+
+- name: "Notepad++ Installation Workflow"
+  block:
+    - name: "Display installation summary"
+      debug:
+        msg:
+          - "====== Notepad++ Installation Configuration ======"
+          - "Install Method: {{ notepadplusplus_install_method }}"
+          - "Version: {{ notepadplusplus_version }}"
+          - "Installation Path: {{ notepadplusplus_install_path }}"
+          - "Create Start Menu Shortcut: {{ notepadplusplus_create_shortcut }}"
+          - "Create Desktop Shortcut: {{ notepadplusplus_create_desktop_shortcut }}"
+          - "Add to PATH: {{ notepadplusplus_add_to_path }}"
+          - "Configure File Associations: {{ notepadplusplus_configure_file_associations }}"
+          - "Enable Auto-Update: {{ notepadplusplus_enable_auto_update }}"
+          - "Enable Backup: {{ notepadplusplus_enable_backup }}"
+          - "Force Installation: {{ notepadplusplus_force_install }}"
+          - "=====================================================\n"
+    
+    - name: "Include pre-checks tasks"
+      include_tasks: "pre_checks.yml"
+    
+    - name: "Create backup configuration before installation"
+      include_tasks: "pre_install.yml"
+      when: notepadplusplus_backup_config | bool
+    
+    - name: "Include installation tasks"
+      include_tasks: "install.yml"
+    
+    - name: "Configure shortcuts and paths"
+      include_tasks: "configure.yml"
+    
+    - name: "Include verification tasks"
+      include_tasks: "verify.yml"
+    
+    - name: "Display installation completion summary"
+      debug:
+        msg:
+          - "====== Notepad++ Installation Completed ======"
+          - "Status: SUCCESS"
+          - "Installation Path: {{ notepadplusplus_exe_path }}"
+          - "Version Installed: {{ notepadplusplus_installation_version_installed }}"
+          - "================================================\n"
+
+  rescue:
+    - name: "Handle installation failure"
+      debug:
+        msg:
+          - "====== Notepad++ Installation FAILED ======"
+          - "Error: {{ ansible_failed_result.msg | default('Unknown error') }}"
+          - "See logs for details"
+          - "========================================\n"
+    
+    - name: "Log installation failure"
+      win_shell: |
+        "Installation failed: {{ ansible_failed_result.msg | default('Unknown error') }}" | Add-Content -Path "{{ notepadplusplus_log_dir }}\notepadplusplus-install.log"
+      when: notepadplusplus_enable_logging
+      ignore_errors: yes
+    
+    - name: "Fail with error message"
+      fail:
+        msg: "Notepad++ installation failed: {{ ansible_failed_result.msg | default('Unknown error') }}"

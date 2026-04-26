@@ -1,0 +1,117 @@
+#SPDX-License-Identifier: MIT-0
+---
+# handlers file for ad-integration
+
+- name: "Restart SSSD"
+  systemd:
+    name: "sssd"
+    state: "restarted"
+    daemon_reload: true
+  listen: "Restart SSSD"
+  when: ad_is_linux | bool
+  become: true
+
+- name: "Restart SSH"
+  systemd:
+    name: "ssh"
+    state: "restarted"
+    daemon_reload: true
+  listen: "Restart SSH"
+  when: ad_is_linux | bool
+  become: true
+
+- name: "Restart Samba"
+  systemd:
+    name: "smbd"
+    state: "restarted"
+    daemon_reload: true
+  listen: "Restart Samba"
+  when: ad_is_linux | bool
+  become: true
+
+- name: "Restart Winbind"
+  systemd:
+    name: "winbind"
+    state: "restarted"
+    daemon_reload: true
+  listen: "Restart Winbind"
+  when: ad_is_linux | bool
+  become: true
+
+- name: "Restart Chrony"
+  systemd:
+    name: "chronyd"
+    state: "restarted"
+    daemon_reload: true
+  listen: "Restart Chrony"
+  when: ad_is_linux | bool
+  become: true
+
+- name: "Restart Auditd"
+  systemd:
+    name: "auditd"
+    state: "restarted"
+    daemon_reload: true
+  listen: "Restart Auditd"
+  when: ad_is_linux | bool
+  become: true
+
+- name: "Restart autofs"
+  systemd:
+    name: "autofs"
+    state: "restarted"
+    daemon_reload: true
+  listen: "Restart autofs"
+  when: ad_is_linux | bool
+  become: true
+
+- name: "Reload SSSD configuration"
+  command: "sss_cache -E"
+  listen: "Reload SSSD configuration"
+  when: ad_is_linux | bool
+  become: true
+  ignore_errors: true
+
+- name: "Reload SSH configuration"
+  command: "sshd -t"
+  listen: "Reload SSH configuration"
+  when: ad_is_linux | bool
+  changed_when: false
+  become: true
+
+- name: "Restart network services"
+  systemd:
+    name: "networking"
+    state: "restarted"
+    daemon_reload: true
+  listen: "Restart network services"
+  when: ad_is_linux | bool
+  become: true
+
+- name: "Reload nsswitch"
+  command: "nscd -i hosts"
+  listen: "Reload nsswitch"
+  when: ad_is_linux | bool
+  ignore_errors: true
+  become: true
+
+- name: "Windows hostname change"
+  win_hostname:
+    name: "{{ ansible_hostname }}"
+  listen: "Windows hostname change"
+  when: ad_is_windows | bool
+  register: hostname_change
+
+- name: "Windows group policy refresh"
+  win_powershell:
+    script: "gpupdate /force"
+  listen: "Windows group policy refresh"
+  when: ad_is_windows | bool
+  ignore_errors: true
+
+- name: "Windows network configuration reload"
+  win_powershell:
+    script: "ipconfig /all"
+  listen: "Windows network configuration reload"
+  when: ad_is_windows | bool
+  changed_when: false

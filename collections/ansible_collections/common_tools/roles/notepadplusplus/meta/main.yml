@@ -1,0 +1,63 @@
+---
+# Role metadata
+
+galaxy_info:
+  author: "Your Organization"
+  description: "Install and configure Notepad++ text editor on Windows servers"
+  company: "Your Organization"
+  license: "MIT"
+  min_ansible_version: 2.9
+  
+  platforms:
+    - name: "Windows"
+      versions:
+        - "7"
+        - "8"
+        - "8.1"
+        - "10"
+        - "11"
+        - "Server 2012 R2"
+        - "Server 2016"
+        - "Server 2019"
+        - "Server 2022"
+  
+  galaxy_tags:
+    - "notepad++"
+    - "text-editor"
+    - "windows"
+    - "development"
+    - "tools"
+    - "utilities"
+    - "software"
+    - "installation"
+
+dependencies: []
+
+# Role information
+role_name: "notepadplusplus"
+namespace: "common_tools"
+collection: "infrastructure"
+
+# Installation requirements
+requirements:
+  - "Ansible 2.9+"
+  - "Python 3.6+"
+  - "Windows 7 or newer"
+  - "Administrator privileges"
+  - "For Chocolatey method: Chocolatey installed"
+  - "For download method: Internet connectivity"
+
+# Supported modules
+supported_modules:
+  - "win_shell"
+  - "win_command"
+  - "win_file"
+  - "win_stat"
+  - "win_copy"
+  - "win_path"
+  - "win_regedit"
+  - "win_reg_stat"
+
+# Version information
+version: "1.0.0"
+release_date: "2024-01-01"

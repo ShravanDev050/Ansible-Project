@@ -1,0 +1,207 @@
+#SPDX-License-Identifier: MIT-0
+---
+# tasks file for Windows Active Directory installation
+
+- name: "Windows AD - Block for feature and role installation"
+  block:
+    - name: "Windows AD - Install required Windows features"
+      win_feature:
+        name: "{{ item }}"
+        state: "present"
+        include_management_tools: true
+        include_sub_features: true
+      register: "feature_result"
+      loop: "{{ ad_windows_required_features }}"
+      when: ad_perform_feature_checks | bool
+
+    - name: "Windows AD - Reboot if features were installed"
+      win_reboot:
+        post_reboot_delay: 60
+      when: feature_result is changed
+
+  rescue:
+    - name: "Windows AD - Display feature installation error"
+      debug:
+        msg: "Failed to install required Windows features: {{ ansible_failed_result.msg }}"
+      failed_when: true
+
+- name: "Windows AD - Forest and Domain configuration"
+  block:
+    - name: "Windows AD - Check if this is already a domain controller"
+      win_command: "powershell.exe -Command \"$env:USERDOMAIN\""
+      register: current_domain
+      changed_when: false
+
+    - name: "Windows AD - Install AD Domain Services role"
+      win_powershell:
+        script: |
+          Install-ADDSForest `
+            -DomainName "{{ ad_domain_name }}" `
+            -ForestLevel {{ ad_forest_level }} `
+            -DomainLevel {{ ad_domain_level }} `
+            -DomainMode {{ ad_domain_level }} `
+            -DomainNetbiosName "{{ ad_domain_netbios_name }}" `
+            -DatabasePath "{{ ad_database_path }}" `
+            -LogPath "{{ ad_log_path }}" `
+            -SysvolPath "{{ ad_sysvol_path }}" `
+            -InstallDns:$true `
+            -NoRebootOnCompletion `
+            -Force
+      register: forest_install_result
+      when: current_domain.stdout_lines[0] != ad_domain_netbios_name
+      changed_when: "'was installed successfully' in forest_install_result.output"
+
+    - name: "Windows AD - Reboot for forest installation"
+      win_reboot:
+        post_reboot_delay: 120
+      when: forest_install_result is changed
+
+  rescue:
+    - name: "Windows AD - Display forest installation error"
+      debug:
+        msg: "Failed to install AD Forest: {{ ansible_failed_result.msg }}"
+      failed_when: true
+
+- name: "Windows AD - DNS Configuration"
+  block:
+    - name: "Windows AD - Configure DNS forwarders"
+      win_powershell:
+        script: |
+          $zone = Get-DnsServerZone -Name "{{ ad_domain_name }}" -ErrorAction SilentlyContinue
+          if ($zone) {
+            Write-Host "DNS zone exists for {{ ad_domain_name }}"
+          }
+      register: dns_zone_check
+      changed_when: false
+      when: ad_install_dns | bool
+
+    - name: "Windows AD - Set DNS forwarders"
+      win_powershell:
+        script: |
+          Set-DnsServerForwarder -IPAddress @({{ ad_dns_forwarders | map('quote') | join(',') }}) -PassThru
+      when:
+        - ad_install_dns | bool
+        - ad_dns_forwarders | length > 0
+
+  rescue:
+    - name: "Windows AD - Display DNS configuration error"
+      debug:
+        msg: "Failed to configure DNS: {{ ansible_failed_result.msg }}"
+
+- name: "Windows AD - DHCP Configuration (Optional)"
+  block:
+    - name: "Windows AD - Install DHCP Server"
+      win_feature:
+        name: "DHCP"
+        state: "present"
+        include_management_tools: true
+      register: dhcp_feature
+      when: ad_install_dhcp | bool
+
+    - name: "Windows AD - Reboot for DHCP installation"
+      win_reboot:
+        post_reboot_delay: 60
+      when: 
+        - ad_install_dhcp | bool
+        - dhcp_feature is changed
+
+    - name: "Windows AD - Configure DHCP scopes"
+      win_powershell:
+        script: |
+          {% for scope in ad_dhcp_scopes %}
+          Add-DhcpServerv4Scope `
+            -Name "{{ scope.name }}" `
+            -StartRange "{{ scope.start_ip }}" `
+            -EndRange "{{ scope.end_ip }}" `
+            -SubnetMask "{{ scope.subnet_mask }}" `
+            -State Active
+          {% endfor %}
+      when:
+        - ad_install_dhcp | bool
+        - ad_dhcp_scopes | length > 0
+
+  rescue:
+    - name: "Windows AD - Display DHCP configuration error"
+      debug:
+        msg: "Failed to configure DHCP: {{ ansible_failed_result.msg }}"
+
+- name: "Windows AD - NTP/Time Configuration"
+  block:
+    - name: "Windows AD - Configure Windows Time Service"
+      win_powershell:
+        script: |
+          $ntp_servers = @({{ ad_ntp_servers | map('quote') | join(',') }})
+          w32tm /config /manualpeerlist:$($ntp_servers -join ' ') /syncfromflags:MANUAL /update
+          Restart-Service w32time
+      register: ntp_config
+      when: ad_ntp_servers | length > 0
+
+  rescue:
+    - name: "Windows AD - Display NTP configuration error"
+      debug:
+        msg: "Failed to configure NTP: {{ ansible_failed_result.msg }}"
+
+- name: "Windows AD - Firewall Configuration"
+  block:
+    - name: "Windows AD - Enable Firewall rules for AD replication"
+      win_firewall_rule:
+        name: "{{ item.name }}"
+        port: "{{ item.port }}"
+        protocol: "{{ item.protocol }}"
+        direction: "in"
+        action: "allow"
+        state: "present"
+        enabled: true
+      loop: "{{ ad_required_ports }}"
+      when: 
+        - ad_firewall_enabled | bool
+        - ad_allow_ldap_replication | bool
+
+  rescue:
+    - name: "Windows AD - Display firewall configuration error"
+      debug:
+        msg: "Failed to configure firewall: {{ ansible_failed_result.msg }}"
+
+- name: "Windows AD - Audit and Logging Configuration"
+  block:
+    - name: "Windows AD - Enable audit logging"
+      win_powershell:
+        script: |
+          {% for event in ad_audit_events %}
+          auditpol /set /subcategory:"{{ event }}" /success:enable /failure:enable
+          {% endfor %}
+      register: audit_config
+      when: ad_enable_audit_logging | bool
+
+  rescue:
+    - name: "Windows AD - Display audit configuration error"
+      debug:
+        msg: "Failed to configure audit logging: {{ ansible_failed_result.msg }}"
+
+- name: "Windows AD - Backup Configuration"
+  block:
+    - name: "Windows AD - Create backup directory"
+      win_file:
+        path: "{{ ad_backup_location }}"
+        state: "directory"
+      when: ad_backup_enabled | bool
+
+    - name: "Windows AD - Configure backup schedule"
+      win_scheduled_task:
+        name: "AD_Backup_{{ ad_backup_schedule }}"
+        description: "Automated Active Directory backup"
+        state: "present"
+        enabled: "{{ ad_backup_enabled | bool }}"
+        actions:
+          - path: "wbadmin"
+            arguments: "start backup -backupTarget:{{ ad_backup_location }} -include:C: -quiet"
+        triggers:
+          - type: "weekly"
+            days_of_week: "Sunday"
+            start_boundary: "02:00:00"
+      when: ad_backup_enabled | bool
+
+  rescue:
+    - name: "Windows AD - Display backup configuration error"
+      debug:
+        msg: "Failed to configure backup: {{ ansible_failed_result.msg }}"

@@ -1,0 +1,211 @@
+#SPDX-License-Identifier: MIT-0
+---
+# tasks file for post-integration configuration
+
+- name: "Post-integration - Clear authentication caches"
+  block:
+    - name: "Post-integration - Clear SSSD cache (Linux)"
+      command: "sss_cache -E"
+      become: true
+      ignore_errors: true
+      when: ad_linux_use_sssd | bool
+
+    - name: "Post-integration - Restart SSSD service"
+      systemd:
+        name: "sssd"
+        state: "restarted"
+        daemon_reload: true
+      become: true
+      when: ad_linux_use_sssd | bool
+
+  rescue:
+    - name: "Post-integration - Display cache clearing error"
+      debug:
+        msg: "Failed to clear cache: {{ ansible_failed_result.msg }}"
+
+- name: "Post-integration - Initialize Kerberos tickets"
+  block:
+    - name: "Post-integration - Kinit with domain account"
+      shell: |
+        echo "{{ ad_password }}" | kinit -l 24h "{{ ad_username }}@{{ ad_kerberos_realm }}"
+      no_log: true
+      ignore_errors: true
+      changed_when: false
+      when: ad_linux_use_sssd | bool
+
+  rescue:
+    - name: "Post-integration - Display Kerberos initialization error"
+      debug:
+        msg: "Failed to initialize Kerberos: {{ ansible_failed_result.msg }}"
+
+- name: "Post-integration - Configure autofs for home directories (Linux)"
+  block:
+    - name: "Post-integration - Install autofs"
+      package:
+        name: "autofs"
+        state: "present"
+      when: ad_linux_use_sssd | bool
+
+    - name: "Post-integration - Configure autofs for SSSD"
+      template:
+        src: "autofs.j2"
+        dest: "/etc/autofs/auto.home"
+        backup: true
+        owner: "root"
+        group: "root"
+        mode: "0644"
+      register: autofs_config
+      when: ad_linux_enable_home_directory_creation | bool
+      notify: "Restart autofs"
+
+  rescue:
+    - name: "Post-integration - Display autofs configuration error"
+      debug:
+        msg: "Failed to configure autofs: {{ ansible_failed_result.msg }}"
+
+- name: "Post-integration - Configure local group membership"
+  block:
+    - name: "Post-integration - Add AD groups to local groups (Linux)"
+      lineinfile:
+        path: "/etc/group"
+        line: "{{ item }}:x:0:"
+        regexp: "^{{ item }}"
+        state: "present"
+      loop: "{{ ad_local_admin_groups }}"
+      when: 
+        - ad_linux_use_sssd | bool
+        - ad_local_admin_groups | length > 0
+      ignore_errors: true
+
+  rescue:
+    - name: "Post-integration - Display group membership error"
+      debug:
+        msg: "Failed to configure group membership: {{ ansible_failed_result.msg }}"
+
+- name: "Post-integration - Configure auditing and logging"
+  block:
+    - name: "Post-integration - Enable audit logging (Linux)"
+      lineinfile:
+        path: "/etc/audit/rules.d/audit.rules"
+        line: "{{ item }}"
+        state: "present"
+        create: true
+      loop:
+        - "-w /etc/sssd/sssd.conf -p wa -k sssd_config_changes"
+        - "-w /etc/sudoers.d/ -p wa -k sudoers_changes"
+        - "-w /etc/group -p wa -k group_changes"
+        - "-w /etc/passwd -p wa -k passwd_changes"
+      when: 
+        - ad_enable_audit_logging | bool
+        - ad_is_linux | bool
+      ignore_errors: true
+      notify: "Restart Auditd"
+
+    - name: "Post-integration - Restart Auditd"
+      systemd:
+        name: "auditd"
+        state: "restarted"
+        daemon_reload: true
+      when: ad_enable_audit_logging | bool
+      ignore_errors: true
+
+  rescue:
+    - name: "Post-integration - Display auditing configuration error"
+      debug:
+        msg: "Failed to configure auditing: {{ ansible_failed_result.msg }}"
+
+- name: "Post-integration - Create symlinks for compatibility"
+  block:
+    - name: "Post-integration - Create PAM symlinks"
+      file:
+        src: "/etc/pam.d/common-auth-ad"
+        dest: "/etc/pam.d/common-auth-include-ad"
+        state: "link"
+        force: true
+      when: 
+        - ad_configure_pam | bool
+        - ad_is_linux | bool
+      ignore_errors: true
+
+  rescue:
+    - name: "Post-integration - Display symlink creation error"
+      debug:
+        msg: "Failed to create symlinks: {{ ansible_failed_result.msg }}"
+
+- name: "Post-integration - Generate integration report"
+  block:
+    - name: "Post-integration - Create integration report file"
+      copy:
+        content: |
+          # Active Directory Integration Report
+          
+          ## Integration Details
+          - Date: {{ ansible_date_time.iso8601 }}
+          - Hostname: {{ ansible_hostname }}
+          - FQDN: {{ ansible_fqdn }}
+          - OS: {{ ansible_os_family }} {{ ansible_distribution_version }}
+          - Kernel: {{ ansible_kernel }}
+          
+          ## Domain Configuration
+          - Domain Name: {{ ad_domain }}
+          - Domain Netbios: {{ ad_domain_netbios }}
+          - AD Server: {{ ad_ad_server }}
+          
+          ## Integration Details
+          - Backend: {% if ad_linux_use_sssd %}SSSD{% elif ad_linux_use_winbind %}Winbind{% else %}Standard{% endif %}
+          - Kerberos Realm: {{ ad_kerberos_realm }}
+          - DNS Servers Configured: {{ ad_dns_servers | join(', ') }}
+          
+          ## Configured Services
+          - SSH Integration: {{ 'Yes' if ad_configure_ssh else 'No' }}
+          - Sudo Integration: {{ 'Yes' if ad_configure_sudoers else 'No' }}
+          - Home Directory Creation: {{ 'Yes' if ad_linux_enable_home_directory_creation else 'No' }}
+          - Audit Logging: {{ 'Yes' if ad_enable_audit_logging else 'No' }}
+          
+          ## Local Admin Groups
+          {% for group in ad_local_admin_groups %}
+          - {{ group }}
+          {% endfor %}
+          
+          ## AD User Groups
+          {% for group in ad_ad_user_groups %}
+          - {{ group }}
+          {% endfor %}
+          
+          ## Important Information
+          - Backup Location: {{ ad_backup_location }}
+          - Configuration Files Backed Up: {{ ansible_date_time.iso8601_basic_short }}
+          - Rollback Available: {{ 'Yes' if ad_enable_rollback else 'No' }}
+          
+          ## Next Steps
+          1. Test user authentication
+          2. Verify group membership
+          3. Test sudo access
+          4. Configure additional security policies
+          5. Monitor logs for integration issues
+        dest: "/tmp/ad_integration_report.txt"
+        mode: "0644"
+      become: true
+
+  rescue:
+    - name: "Post-integration - Display report generation error"
+      debug:
+        msg: "Failed to generate integration report: {{ ansible_failed_result.msg }}"
+
+- name: "Post-integration - Completion notification"
+  debug:
+    msg: |
+      Active Directory Integration Post-Configuration Completed!
+      ==========================================================
+      System {{ ansible_hostname }} has been integrated into {{ ad_domain }}
+      
+      Authentication Backend: {% if ad_linux_use_sssd %}SSSD{% elif ad_linux_use_winbind %}Winbind{% else %}Windows AD{% endif %}
+      Kerberos Realm: {{ ad_kerberos_realm }}
+      
+      Configuration files backed up to: {{ ad_backup_location }}/{{ ad_config_backup_timestamp }}
+      
+      Please verify:
+      - User authentication works
+      - Group membership is correct
+      - SSH access is configured
+      - Sudo access works as expected

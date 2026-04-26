@@ -1,0 +1,285 @@
+#SPDX-License-Identifier: MIT-0
+---
+# tasks file for post-installation configuration
+
+- name: "Post-installation - Windows DC verification"
+  block:
+    - name: "Post-installation - Verify AD DS is running"
+      win_service:
+        name: "NTDS"
+        state: "started"
+      when: ad_is_windows | bool
+
+    - name: "Post-installation - Check forest info (Windows)"
+      win_powershell:
+        script: |
+          $forest = [System.DirectoryServices.ActiveDirectory.Forest]::GetCurrentForest()
+          Write-Host "Forest Name: $($forest.Name)"
+          Write-Host "Forest Functional Level: $($forest.ForestModeLevel)"
+      register: forest_info
+      when: ad_is_windows | bool
+      changed_when: false
+
+  rescue:
+    - name: "Post-installation - Display Windows verification error"
+      debug:
+        msg: "Windows DC verification failed: {{ ansible_failed_result.msg }}"
+
+- name: "Post-installation - Linux DC verification"
+  block:
+    - name: "Post-installation - Test Samba DC"
+      command: "samba-tool forest info 127.0.0.1"
+      register: samba_forest_info
+      become: true
+      changed_when: false
+      when: ad_is_linux | bool
+
+    - name: "Post-installation - Display Samba forest info"
+      debug:
+        msg: "{{ samba_forest_info.stdout_lines }}"
+      when: ad_is_linux | bool
+
+  rescue:
+    - name: "Post-installation - Display Linux verification error"
+      debug:
+        msg: "Linux DC verification failed: {{ ansible_failed_result.msg }}"
+
+- name: "Post-installation - Create default AD groups"
+  block:
+    - name: "Post-installation - Create security groups (Windows)"
+      win_powershell:
+        script: |
+          $groups = @(
+            @{Name="IT_Admins"; Description="IT Administration Group"},
+            @{Name="Help_Desk"; Description="Help Desk Support Group"},
+            @{Name="Domain_Users_RO"; Description="Read-Only Domain Users"},
+            @{Name="Backup_Operators"; Description="Backup Operators Group"}
+          )
+          
+          foreach ($group in $groups) {
+            $existing = Get-ADGroup -Filter {Name -eq $group.Name} -ErrorAction SilentlyContinue
+            if (-not $existing) {
+              New-ADGroup -Name $group.Name -GroupScope Global -GroupCategory Security -Description $group.Description
+              Write-Host "Created group: $($group.Name)"
+            }
+          }
+      when: ad_is_windows | bool
+      ignore_errors: true
+
+    - name: "Post-installation - Create security groups (Linux)"
+      command: |
+        samba-tool group add {{ item.name }} --description='{{ item.description }}'
+      loop:
+        - {name: "IT_Admins", description: "IT Administration Group"}
+        - {name: "Help_Desk", description: "Help Desk Support Group"}
+        - {name: "Domain_Users_RO", description: "Read-Only Domain Users"}
+        - {name: "Backup_Operators", description: "Backup Operators Group"}
+      become: true
+      when: ad_is_linux | bool
+      ignore_errors: true
+
+  rescue:
+    - name: "Post-installation - Display group creation error"
+      debug:
+        msg: "Group creation failed: {{ ansible_failed_result.msg }}"
+
+- name: "Post-installation - Create default OUs"
+  block:
+    - name: "Post-installation - Create OUs (Windows)"
+      win_powershell:
+        script: |
+          $baseDN = "dc=$(({{ ad_domain_name | quote }}).Split('.') | ForEach-Object { 'dc=' + $_ } | Join-String -Separator ',')"
+          
+          $ous = @(
+            "OU=Users,{{ $baseDN }}",
+            "OU=Computers,{{ $baseDN }}",
+            "OU=Groups,{{ $baseDN }}",
+            "OU=Service_Accounts,{{ $baseDN }}"
+          )
+          
+          foreach ($ou in $ous) {
+            $ouName = ($ou -split ',')[0].Split('=')[1]
+            $path = $ou -replace "^OU=[^,]+,", ""
+            
+            $existing = Get-ADOrganizationalUnit -Filter {Name -eq $ouName} -SearchBase $path -ErrorAction SilentlyContinue
+            if (-not $existing) {
+              New-ADOrganizationalUnit -Name $ouName -Path $path -ProtectedFromAccidentalDeletion $true
+              Write-Host "Created OU: $ouName"
+            }
+          }
+      when: ad_is_windows | bool
+      ignore_errors: true
+
+  rescue:
+    - name: "Post-installation - Display OU creation error"
+      debug:
+        msg: "OU creation failed: {{ ansible_failed_result.msg }}"
+
+- name: "Post-installation - Configure replication"
+  block:
+    - name: "Post-installation - Set replication interval (Windows)"
+      win_powershell:
+        script: |
+          $sites = Get-ADReplicationSite -Filter *
+          foreach ($site in $sites) {
+            $siteLinks = Get-ADReplicationSiteLink -Filter {SiteList -eq $site}
+            foreach ($link in $siteLinks) {
+              Set-ADReplicationSiteLink -Identity $link.Identity -ReplicationFrequencyInMinutes {{ ad_replication_interval }}
+            }
+          }
+      when: ad_is_windows | bool
+      ignore_errors: true
+
+  rescue:
+    - name: "Post-installation - Display replication configuration error"
+      debug:
+        msg: "Replication configuration failed: {{ ansible_failed_result.msg }}"
+
+- name: "Post-installation - Configure logging and auditing"
+  block:
+    - name: "Post-installation - Enable verbose logging (Windows)"
+      win_registry:
+        path: "HKLM:\\SYSTEM\\CurrentControlSet\\Services\\NTDS\\Diagnostics"
+        name: "{{ item }}"
+        data: "{{ ad_log_level | default(1) }}"
+        type: dword
+      loop:
+        - "1 Schema"
+        - "2 Field Engineering"
+        - "3 Replication Events"
+        - "4 Replication"
+      when: ad_is_windows | bool
+      ignore_errors: true
+
+    - name: "Post-installation - Configure Samba logging (Linux)"
+      lineinfile:
+        path: "/etc/samba/smb.conf"
+        line: "log level = {{ ad_log_level | default('INFO') }}"
+        regexp: "^log level ="
+        state: "present"
+      become: true
+      when: ad_is_linux | bool
+      notify: "Restart Samba"
+      ignore_errors: true
+
+  rescue:
+    - name: "Post-installation - Display logging configuration error"
+      debug:
+        msg: "Logging configuration failed: {{ ansible_failed_result.msg }}"
+
+- name: "Post-installation - Create LDAP query results directory"
+  block:
+    - name: "Post-installation - Create query results directory"
+      file:
+        path: "/tmp/ad_query_results"
+        state: "directory"
+        mode: "0755"
+      become: true
+      when: ad_is_linux | bool
+
+    - name: "Post-installation - Export domain information (Windows)"
+      win_powershell:
+        script: |
+          Get-ADDomain | Export-Clixml -Path "C:\\temp\\ad_domain_info.xml"
+          Get-ADForest | Export-Clixml -Path "C:\\temp\\ad_forest_info.xml"
+      when: ad_is_windows | bool
+      ignore_errors: true
+
+  rescue:
+    - name: "Post-installation - Display directory creation error"
+      debug:
+        msg: "Directory creation failed: {{ ansible_failed_result.msg }}"
+
+- name: "Post-installation - Set up monitoring and alerts"
+  block:
+    - name: "Post-installation - Create monitoring script directory"
+      file:
+        path: "/opt/ad_monitoring"
+        state: "directory"
+        mode: "0755"
+      become: true
+      when: ad_is_linux | bool
+
+    - name: "Post-installation - Deploy monitoring script (Linux)"
+      copy:
+        content: |
+          #!/bin/bash
+          # AD Monitoring Script
+          echo "Checking AD DC status..."
+          systemctl status samba
+          echo "Checking LDAP connectivity..."
+          ldapwhoami -H ldap://localhost
+          echo "Checking Kerberos..."
+          klist -l
+        dest: "/opt/ad_monitoring/check_ad_status.sh"
+        mode: "0755"
+      become: true
+      when: ad_is_linux | bool
+
+  rescue:
+    - name: "Post-installation - Display monitoring setup error"
+      debug:
+        msg: "Monitoring setup failed: {{ ansible_failed_result.msg }}"
+
+- name: "Post-installation - Document configuration"
+  block:
+    - name: "Post-installation - Create configuration documentation"
+      copy:
+        content: |
+          # Active Directory Installation Summary
+          
+          ## Installation Details
+          - Date: {{ ansible_date_time.iso8601 }}
+          - Hostname: {{ ansible_hostname }}
+          - OS: {{ ansible_os_family }}
+          
+          ## Domain Configuration
+          - Domain Name: {{ ad_domain_name }}
+          - NetBIOS Name: {{ ad_domain_netbios_name }}
+          - Forest Level: {{ ad_forest_level }}
+          - Domain Level: {{ ad_domain_level }}
+          
+          ## Services Installed
+          - AD Domain Services: Yes
+          - DNS: {{ ad_install_dns }}
+          - DHCP: {{ ad_install_dhcp }}
+          
+          ## Important Credentials
+          - Admin Account: {{ ad_admin_user }}
+          
+          ## Key Ports
+          {% for port in ad_required_ports %}
+          - {{ port.name }}: {{ port.port }}/{{ port.protocol }}
+          {% endfor %}
+          
+          ## Next Steps
+          1. Configure backup strategy
+          2. Set up additional domain controllers
+          3. Configure group policies
+          4. Configure delegation and permissions
+          5. Set up monitoring and alerting
+        dest: "/tmp/ad_installation_summary.txt"
+        mode: "0644"
+      become: true
+
+  rescue:
+    - name: "Post-installation - Display documentation error"
+      debug:
+        msg: "Documentation creation failed: {{ ansible_failed_result.msg }}"
+
+- name: "Post-installation - Completion notification"
+  debug:
+    msg: |
+      Active Directory Installation Completed Successfully!
+      ====================================================
+      Domain: {{ ad_domain_name }}
+      NetBIOS: {{ ad_domain_netbios_name }}
+      Server: {{ ansible_hostname }}
+      OS: {{ ansible_os_family }}
+      
+      Next Steps:
+      - Verify domain controller replication
+      - Configure additional domain controllers if needed
+      - Set up backup and disaster recovery
+      - Configure monitoring and alerting
+      - Document any custom configurations

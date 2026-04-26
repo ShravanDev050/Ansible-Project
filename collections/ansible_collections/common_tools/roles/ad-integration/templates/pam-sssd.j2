@@ -1,0 +1,13 @@
+# This file is managed by Ansible
+# PAM configuration for SSSD AD integration
+# Generated: {{ ansible_date_time.iso8601 }}
+
+# @include common-auth-ad
+auth    [default=1 ignore=ignore success=ok]        pam_unix.so nullok try_first_pass
+auth    requisite                       pam_deny.so
+auth    required                        pam_permit.so
+auth    required                        pam_env.so revoke
+auth    required                        pam_unix.so use_authtok try_first_pass nullok yank
+auth    sufficient                      pam_sss.so use_first_pass
+auth    sufficient                      pam_winbind.so krb5_auth krb5_ccache_type=FILE cached_login try_first_pass
+auth    required                        pam_unix.so use_authtok

@@ -1,0 +1,6 @@
+# This file is managed by Ansible
+# Autofs configuration for AD home directories
+# Generated: {{ ansible_date_time.iso8601 }}
+
+# Map for AD user home directories
+*   -fstype=nfs,rw,hard,intr,nosuid,nodev,relatime      {{ ad_ad_server }}:/home/&

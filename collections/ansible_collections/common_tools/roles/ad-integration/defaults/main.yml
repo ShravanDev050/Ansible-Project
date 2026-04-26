@@ -1,0 +1,155 @@
+#SPDX-License-Identifier: MIT-0
+---
+# defaults file for ad-integration
+
+# Active Directory Integration Defaults
+ad_domain: "example.com"
+ad_domain_upper: "{{ ad_domain | upper }}"
+ad_domain_netbios: "EXAMPLE"
+ad_ad_server: ""  # FQDN of AD server (required)
+ad_username: "administrator"
+ad_password: ""  # Should be provided via ansible-vault
+ad_ou_path: ""  # e.g., "OU=Computers,OU=Production,DC=example,DC=com" (optional)
+
+# DNS Configuration
+ad_dns_servers:
+  - ""  # Primary AD server IP
+  - ""  # Secondary AD server IP
+ad_configure_dns: true
+
+# Time Synchronization
+ad_configure_ntp: true
+ad_ntp_servers:
+  - "0.pool.ntp.org"
+  - "1.pool.ntp.org"
+
+# Windows Specific Configuration
+ad_windows_domain_join_ou: ""  # Optional OU path for new computers
+ad_windows_create_account: true
+ad_windows_enable_gpo: true
+ad_windows_restart_after_join: false  # Set to true if needed
+ad_windows_restart_timeout: 600
+ad_windows_username_domain_format: "{{ ad_domain_netbios }}\{{ ad_username }}"
+ad_windows_kerberos_realm: "{{ ad_domain | upper }}"
+
+# Linux Specific Configuration (SSSD/Winbind)
+ad_linux_ad_backend: "sssd"  # sssd or winbind
+ad_linux_use_sssd: true
+ad_linux_use_winbind: false
+ad_linux_enable_home_directory_creation: true
+ad_linux_home_directory_base: "/home"
+ad_linux_shell_for_ad_users: "/bin/bash"
+ad_linux_kerberos_ccache_location: "/tmp/krb5cc_%{uid}"
+
+# SSSD Configuration (Linux)
+ad_sssd_enabled: true
+ad_sssd_domains: "{{ ad_domain }}"
+ad_sssd_services: "nss,pam,sudo,ssh"
+ad_sssd_debug_level: 0  # 0-10
+ad_sssd_ldap_uri: "ldap://{{ ad_ad_server }}"
+ad_sssd_ldap_search_base: "{{ ad_domain.split('.') | map('regex_replace', '^(.*)$', 'dc=\\1') | join(',') }}"
+ad_sssd_ldap_scope: "subtree"
+ad_sssd_ldap_timeout: 10
+ad_sssd_use_full_qualified_names: false
+ad_sssd_fallback_homedir: "/home/%d/%u"
+ad_sssd_sudo_provider: "ldap"
+ad_sssd_sudo_smart_group_lookup: true
+
+# Winbind Configuration (Linux)
+ad_winbind_enabled: false
+ad_winbind_use_default_domain: true
+ad_winbind_template_homedir: "/home/%D/%U"
+ad_winbind_template_shell: "/bin/bash"
+ad_winbind_max_domain_connections: -1
+
+# User and Group Configuration
+ad_configure_sudoers: true
+ad_sudoers_groups: []  # e.g., ["admins", "wheel"]
+ad_configure_user_groups: true
+ad_local_admin_groups: []  # e.g., ["administrators", "Domain Admins"]
+ad_ad_user_groups: []  # AD groups to add to local admin
+
+# Security Configuration
+ad_enforce_password_policy: true
+ad_enforce_minimum_password_age: 0
+ad_enforce_maximum_password_age: 90
+ad_enforce_password_length: 8
+ad_allow_multiple_logins: false
+ad_lock_account_after_failed_attempts: true
+ad_failed_login_attempts: 5
+ad_failed_login_lockout_duration: 15  # minutes
+
+# PAM Configuration (Linux)
+ad_configure_pam: true
+ad_pam_mkhomedir: true
+ad_pam_password_suffix: "ou=users"
+
+# SSH Configuration (Linux)
+ad_configure_ssh: true
+ad_ssh_pubkey_provider: "sssd"
+ad_ssh_trusted_domains: "{{ ad_domain }}"
+ad_ssh_host_pubkey_retrieval: true
+
+# Kerberos Configuration
+ad_configure_kerberos: true
+ad_kerberos_realm: "{{ ad_domain | upper }}"
+ad_kerberos_kdc_admin_server: "{{ ad_ad_server }}"
+ad_kerberos_default_domain: "{{ ad_domain }}"
+ad_kerberos_clock_skew: 300  # seconds
+
+# Network Configuration
+ad_configure_firewall: true
+ad_required_ports_open: true
+ad_allow_udp_389: true
+ad_allow_tcp_389: true
+ad_allow_tcp_636: true
+ad_allow_tcp_3268: true
+ad_allow_tcp_3269: true
+ad_allow_udp_53: true
+ad_allow_tcp_53: true
+ad_allow_udp_88: true
+ad_allow_tcp_88: true
+ad_allow_udp_123: true
+
+# Certificate/SSL Configuration
+ad_use_ldaps: false  # Use LDAP with SSL
+ad_ldaps_cert_validation: true
+ad_ldaps_ca_cert_path: "/etc/ssl/certs/ca-certificates.crt"
+
+# Hostname Configuration
+ad_update_hostname: true
+ad_hostname_prefix: ""  # e.g., "prod-", "dev-"
+ad_hostname_domain_suffix: true  # append domain name to hostname
+
+# Verification and Testing
+ad_verify_integration: true
+ad_verify_ad_connectivity: true
+ad_verify_user_lookup: true
+ad_verify_group_lookup: true
+ad_verify_sudo_access: true
+ad_verify_ssh_access: true
+
+# Logging and Auditing
+ad_enable_audit_logging: true
+ad_log_level: "INFO"
+ad_audit_success_events: true
+ad_audit_failure_events: true
+ad_audit_account_login: true
+
+# Cleanup and Rollback
+ad_backup_configuration: true
+ad_backup_location: "/var/backups/ad-integration"
+ad_enable_rollback: true
+ad_rollback_on_failure: true
+
+# Performance Tuning
+ad_cache_enabled: true
+ad_cache_timeout: 3600  # seconds
+ad_enumerate_users: false
+ad_enumerate_groups: false
+ad_reconnection_timeout: 30
+
+# Proxy Configuration (if behind proxy)
+ad_use_http_proxy: false
+ad_http_proxy: ""
+ad_no_proxy_hosts: "{{ ad_domain }},localhost,127.0.0.1"

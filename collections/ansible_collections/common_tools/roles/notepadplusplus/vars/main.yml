@@ -1,0 +1,142 @@
+---
+# Validation variables for Notepad++ installation role
+
+# Supported installation methods
+notepadplusplus_valid_install_methods:
+  - "chocolatey"
+  - "msi"
+  - "portable"
+  - "zip"
+
+# Supported Windows versions
+notepadplusplus_supported_windows_versions:
+  - "6.1"    # Windows 7
+  - "6.2"    # Windows 8
+  - "6.3"    # Windows 8.1
+  - "10.0"   # Windows 10
+  - "10.0"   # Windows 11 (same as Windows 10)
+
+# Notepad++ executable filename
+notepadplusplus_executable_name: "notepad++.exe"
+
+# Notepad++ executable variations
+notepadplusplus_executable_variations:
+  - "notepad++.exe"
+  - "notepad-plus-plus.exe"
+  - "npp.exe"
+
+# Common installation directories to check
+notepadplusplus_common_install_paths:
+  - "C:\\Program Files\\Notepad++"
+  - "C:\\Program Files (x86)\\Notepad++"
+  - "C:\\Program Files\\Notepad++ Portable"
+  - "C:\\Notepad++"
+  - "C:\\Tools\\Notepad++"
+
+# Registry paths to check for Notepad++ (Windows)
+notepadplusplus_registry_paths:
+  - "HKLM:\\Software\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\Notepad++"
+  - "HKLM:\\Software\\Wow6432Node\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\Notepad++"
+  - "HKCU:\\Software\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\Notepad++"
+
+# Default file associations
+notepadplusplus_default_file_types:
+  - ".txt"
+  - ".log"
+  - ".conf"
+  - ".config"
+  - ".yml"
+  - ".yaml"
+  - ".json"
+  - ".xml"
+  - ".ini"
+  - ".md"
+  - ".sh"
+  - ".bat"
+  - ".ps1"
+  - ".py"
+  - ".js"
+  - ".html"
+  - ".css"
+
+# Check variables for validation
+notepadplusplus_check_install_method: "{{ notepadplusplus_install_method in notepadplusplus_valid_install_methods }}"
+notepadplusplus_check_install_path_valid: "{{ notepadplusplus_install_path | length > 0 }}"
+notepadplusplus_check_download_retries_valid: "{{ notepadplusplus_download_retries > 0 }}"
+notepadplusplus_check_download_timeout_valid: "{{ notepadplusplus_download_timeout > 0 }}"
+notepadplusplus_check_version_specified: "{{ notepadplusplus_version | length > 0 }}"
+notepadplusplus_check_font_size_valid: "{{ notepadplusplus_font_size > 0 and notepadplusplus_font_size <= 72 }}"
+
+# Status check patterns
+notepadplusplus_installation_check_pattern: "Notepad++"
+notepadplusplus_version_check_pattern: "v[0-9]+"
+
+# Chocolatey package name
+notepadplusplus_chocolatey_package_name: "notepadplusplus"
+
+# Default GitHub release URL for version checking
+notepadplusplus_github_api_url: "https://api.github.com/repos/notepad-plus-plus/notepad-plus-plus/releases/latest"
+
+# Timeout for installation (minutes)
+notepadplusplus_installation_timeout_minutes: 10
+
+# Performance and resource checks
+notepadplusplus_min_disk_space_mb: 50
+notepadplusplus_min_free_disk_space_mb: 100
+notepadplusplus_min_memory_mb: 256
+
+# Registry keys for installation verification
+notepadplusplus_registry_uninstall_key: "HKLM:\\Software\\Microsoft\\Windows\\CurrentVersion\\Uninstall"
+notepadplusplus_registry_wow6432_key: "HKLM:\\Software\\Wow6432Node\\Microsoft\\Windows\\CurrentVersion\\Uninstall"
+
+# Notepad++ user profile path
+notepadplusplus_user_appdata_path: "AppData\\Roaming\\Notepad++"
+
+# Supported themes
+notepadplusplus_supported_themes:
+  - "default"
+  - "dark"
+  - "light"
+  - "obsidian"
+  - "monokai"
+
+# Common font names for Windows
+notepadplusplus_supported_fonts:
+  - "Consolas"
+  - "Courier New"
+  - "Lucida Console"
+  - "Courier"
+  - "Monaco"
+  - "Menlo"
+  - "Ubuntu Mono"
+  - "Inconsolata"
+  - "DejaVu Sans Mono"
+
+# Session backup frequency validation
+notepadplusplus_check_session_backup_interval_valid: "{{ notepadplusplus_session_backup_interval > 0 }}"
+
+# Installation method specific checks
+notepadplusplus_chocolatey_required: "{{ notepadplusplus_install_method == 'chocolatey' }}"
+notepadplusplus_download_required: "{{ notepadplusplus_install_method in ['msi', 'portable', 'zip'] }}"
+notepadplusplus_url_valid: "{{ notepadplusplus_download_url.startswith('http') }}"
+
+# Logging configuration
+notepadplusplus_logging_enabled: "{{ notepadplusplus_enable_logging }}"
+notepadplusplus_backup_enabled: "{{ notepadplusplus_backup_config }}"
+
+# Retry and timeout defaults for download operations
+notepadplusplus_max_retries: 5
+notepadplusplus_default_timeout: 300
+
+# Installation result variables (for use in tasks)
+notepadplusplus_installation_successful: false
+notepadplusplus_installation_version_installed: ""
+notepadplusplus_installation_path_used: ""
+
+# Pre-check requirements
+notepadplusplus_requires_admin: true
+notepadplusplus_requires_internet: "{{ notepadplusplus_install_method in ['chocolatey', 'msi', 'portable', 'zip'] }}"
+
+# Backup and restore patterns
+notepadplusplus_config_backup_pattern: "notepadplusplus-config-backup-*.zip"
+notepadplusplus_backup_timestamp_format: "%Y%m%d-%H%M%S"

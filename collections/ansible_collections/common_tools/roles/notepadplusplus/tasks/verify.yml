@@ -1,0 +1,140 @@
+---
+# Post-installation verification tasks for Notepad++
+
+- name: "Verify Notepad++ executable exists"
+  win_stat:
+    path: "{{ notepadplusplus_exe_path }}"
+  register: exe_exists
+
+- name: "Assert executable exists"
+  assert:
+    that:
+      - exe_exists.stat.exists
+    fail_msg: "Notepad++ executable not found at {{ notepadplusplus_exe_path }}"
+
+- name: "Get Notepad++ executable version"
+  win_shell: |
+    try {
+      $exePath = "{{ notepadplusplus_exe_path }}"
+      if (Test-Path $exePath) {
+        $versionInfo = [System.Diagnostics.FileVersionInfo]::GetVersionInfo($exePath)
+        Write-Output $versionInfo.FileVersion
+      } else {
+        Write-Output "Not found"
+      }
+    } catch {
+      Write-Output "Error: $_"
+    }
+  register: notepadplusplus_file_version
+  changed_when: false
+
+- name: "Set installation version fact"
+  set_fact:
+    notepadplusplus_installation_version_installed: "{{ notepadplusplus_file_version.stdout | trim }}"
+
+- name: "Test launching Notepad++"
+  win_shell: |
+    try {
+      $process = Start-Process -FilePath "{{ notepadplusplus_exe_path }}" -NoNewWindow -PassThru -ErrorAction Stop
+      Start-Sleep -Seconds 2
+      
+      if ($process.HasExited) {
+        Write-Output "Process exited with code: $($process.ExitCode)"
+      } else {
+        Write-Output "Process running (PID: $($process.Id))"
+        Stop-Process -Id $process.Id -Force -ErrorAction SilentlyContinue
+      }
+    } catch {
+      Write-Output "Error: $_"
+    }
+  register: launch_test
+  ignore_errors: yes
+
+- name: "Check if Notepad++ is in PATH"
+  win_shell: |
+    try {
+      $cmd = Get-Command notepad++.exe -ErrorAction Stop
+      Write-Output "Found: $($cmd.Source)"
+    } catch {
+      Write-Output "Not in PATH"
+    }
+  register: path_check
+  changed_when: false
+  when: notepadplusplus_add_to_path | bool
+
+- name: "Verify Start Menu shortcut"
+  win_stat:
+    path: "{{ ansible_env.APPDATA }}\\Microsoft\\Windows\\Start Menu\\Programs\\Notepad++.lnk"
+  register: startmenu_shortcut
+  when: notepadplusplus_create_shortcut | bool
+
+- name: "Verify Desktop shortcut"
+  win_stat:
+    path: "{{ ansible_env.USERPROFILE }}\\Desktop\\Notepad++.lnk"
+  register: desktop_shortcut
+  when: notepadplusplus_create_desktop_shortcut | bool
+
+- name: "Check registry for installation"
+  win_reg_stat:
+    path: "HKLM:\\Software\\Microsoft\\Windows\\CurrentVersion\\Uninstall"
+  register: uninstall_registry
+  ignore_errors: yes
+
+- name: "Verify configuration directory"
+  win_stat:
+    path: "{{ ansible_env.APPDATA }}\\Notepad++"
+  register: config_dir
+
+- name: "Display verification results"
+  debug:
+    msg:
+      - "====== Post-Installation Verification ======"
+      - "Executable Exists: {{ exe_exists.stat.exists }}"
+      - "File Version: {{ notepadplusplus_file_version.stdout | trim }}"
+      - "Launch Test: {{ launch_test.stdout | trim }}"
+      - "In PATH: {{ path_check.stdout | trim if notepadplusplus_add_to_path else 'N/A' }}"
+      - "Start Menu Shortcut: {{ startmenu_shortcut.stat.exists | default('N/A') }}"
+      - "Desktop Shortcut: {{ desktop_shortcut.stat.exists | default('N/A') }}"
+      - "Config Directory: {{ config_dir.stat.exists }}"
+      - "========================================\n"
+
+- name: "Generate installation report"
+  win_shell: |
+    $reportPath = "{{ notepadplusplus_log_dir }}\notepadplusplus-verification-report.txt"
+    $content = @"
+    Notepad++ Installation Verification Report
+    ============================================
+    Installation Date: $(Get-Date)
+    Installation Path: {{ notepadplusplus_exe_path }}
+    Executable Exists: {{ exe_exists.stat.exists }}
+    File Version: {{ notepadplusplus_file_version.stdout | trim }}
+    Installation Method: {{ notepadplusplus_install_method }}
+    
+    Shortcuts:
+    - Start Menu: {{ startmenu_shortcut.stat.exists | default('N/A') }}
+    - Desktop: {{ desktop_shortcut.stat.exists | default('N/A') }}
+    - In PATH: {{ path_check.stdout | trim if notepadplusplus_add_to_path else 'N/A' }}
+    
+    Configuration:
+    - Config Directory: {{ config_dir.stat.exists }}
+    - Backup Enabled: {{ notepadplusplus_enable_backup }}
+    - Auto-Update: {{ notepadplusplus_enable_auto_update }}
+    
+    Launch Test Result: {{ launch_test.stdout | trim }}
+    "@ | Out-File -FilePath $reportPath -Encoding UTF8
+    
+    Write-Output "Verification report created: $reportPath"
+  when: notepadplusplus_enable_logging | bool
+  ignore_errors: yes
+
+- name: "Final installation summary"
+  debug:
+    msg:
+      - "====== Installation Summary ======"
+      - "Status: SUCCESS"
+      - "Application: Notepad++"
+      - "Version: {{ notepadplusplus_installation_version_installed }}"
+      - "Location: {{ notepadplusplus_exe_path }}"
+      - "Installation Method: {{ notepadplusplus_install_method }}"
+      - "Log File: {{ notepadplusplus_log_dir }}/notepadplusplus-install.log"
+      - "================================\n"

@@ -1,0 +1,267 @@
+#SPDX-License-Identifier: MIT-0
+---
+# tasks file for configuration backup before integration
+
+- name: "Backup - Create backup directory"
+  block:
+    - name: "Backup - Create backup location"
+      file:
+        path: "{{ ad_backup_location }}/{{ ad_config_backup_timestamp }}"
+        state: "directory"
+        mode: "0700"
+      become: true
+      register: backup_dir
+
+  rescue:
+    - name: "Backup - Display directory creation error"
+      debug:
+        msg: "Failed to create backup directory: {{ ansible_failed_result.msg }}"
+      failed_when: not ad_rollback_on_failure | bool
+
+- name: "Backup - Linux configuration files"
+  block:
+    - name: "Backup - Backup SSSD configuration"
+      copy:
+        src: "{{ ad_sssd_config_file }}"
+        dest: "{{ ad_backup_location }}/{{ ad_config_backup_timestamp }}/sssd.conf.bak"
+        remote_src: true
+        backup: true
+      ignore_errors: true
+      when: 
+        - ad_is_linux | bool
+        - ansible_os_family == "Debian"
+
+    - name: "Backup - Backup Samba configuration"
+      copy:
+        src: "{{ ad_samba_config_file }}"
+        dest: "{{ ad_backup_location }}/{{ ad_config_backup_timestamp }}/smb.conf.bak"
+        remote_src: true
+        backup: true
+      ignore_errors: true
+      when: ad_is_linux | bool
+
+    - name: "Backup - Backup Kerberos configuration"
+      copy:
+        src: "{{ ad_kerberos_config_file }}"
+        dest: "{{ ad_backup_location }}/{{ ad_config_backup_timestamp }}/krb5.conf.bak"
+        remote_src: true
+        backup: true
+      ignore_errors: true
+      when: ad_is_linux | bool
+
+    - name: "Backup - Backup nsswitch configuration"
+      copy:
+        src: "{{ ad_nsswitch_file }}"
+        dest: "{{ ad_backup_location }}/{{ ad_config_backup_timestamp }}/nsswitch.conf.bak"
+        remote_src: true
+        backup: true
+      ignore_errors: true
+      when: ad_is_linux | bool
+
+    - name: "Backup - Backup PAM configuration"
+      copy:
+        src: "/etc/pam.d/"
+        dest: "{{ ad_backup_location }}/{{ ad_config_backup_timestamp }}/pam.d/"
+        remote_src: true
+        backup: true
+      ignore_errors: true
+      when: ad_is_linux | bool
+
+    - name: "Backup - Backup SSH configuration"
+      copy:
+        src: "{{ ad_ssh_config_file }}"
+        dest: "{{ ad_backup_location }}/{{ ad_config_backup_timestamp }}/sshd_config.bak"
+        remote_src: true
+        backup: true
+      ignore_errors: true
+      when: ad_is_linux | bool
+
+    - name: "Backup - Backup sudoers configuration"
+      copy:
+        src: "/etc/sudoers"
+        dest: "{{ ad_backup_location }}/{{ ad_config_backup_timestamp }}/sudoers.bak"
+        remote_src: true
+        backup: true
+      ignore_errors: true
+      when: ad_is_linux | bool
+
+    - name: "Backup - Backup hostname and hosts"
+      copy:
+        src: "{{ item }}"
+        dest: "{{ ad_backup_location }}/{{ ad_config_backup_timestamp }}/"
+        remote_src: true
+        backup: true
+      ignore_errors: true
+      loop:
+        - "/etc/hostname"
+        - "/etc/hosts"
+      when: ad_is_linux | bool
+
+    - name: "Backup - Backup DNS configuration"
+      copy:
+        src: "/etc/resolv.conf"
+        dest: "{{ ad_backup_location }}/{{ ad_config_backup_timestamp }}/resolv.conf.bak"
+        remote_src: true
+        backup: true
+      ignore_errors: true
+      when: ad_is_linux | bool
+
+  rescue:
+    - name: "Backup - Display Linux configuration backup error"
+      debug:
+        msg: "Some Linux configuration files could not be backed up: {{ ansible_failed_result.msg }}"
+
+- name: "Backup - Windows configuration files"
+  block:
+    - name: "Backup - Backup network configuration"
+      win_powershell:
+        script: |
+          Get-NetAdapterConfiguration | Export-Clixml -Path "{{ ad_backup_location }}\{{ ad_config_backup_timestamp }}\network_config.xml"
+      ignore_errors: true
+      when: ad_is_windows | bool
+
+    - name: "Backup - Backup Group Policy"
+      win_powershell:
+        script: |
+          Copy-Item -Path "C:\Windows\System32\GroupPolicy" -Destination "{{ ad_backup_location }}\{{ ad_config_backup_timestamp }}\GroupPolicy" -Recurse -Force
+      ignore_errors: true
+      when: ad_is_windows | bool
+
+    - name: "Backup - Backup DNS settings"
+      win_powershell:
+        script: |
+          Get-DnsClientServerAddress | Export-Clixml -Path "{{ ad_backup_location }}\{{ ad_config_backup_timestamp }}\dns_settings.xml"
+      ignore_errors: true
+      when: ad_is_windows | bool
+
+    - name: "Backup - Backup firewall rules"
+      win_powershell:
+        script: |
+          Get-NetFirewallRule | Export-Clixml -Path "{{ ad_backup_location }}\{{ ad_config_backup_timestamp }}\firewall_rules.xml"
+      ignore_errors: true
+      when: ad_is_windows | bool
+
+  rescue:
+    - name: "Backup - Display Windows configuration backup error"
+      debug:
+        msg: "Some Windows configuration files could not be backed up: {{ ansible_failed_result.msg }}"
+
+- name: "Backup - Create backup inventory"
+  block:
+    - name: "Backup - Generate backup inventory file"
+      copy:
+        content: |
+          # AD Integration Configuration Backup Inventory
+          # ============================================
+          
+          Date: {{ ansible_date_time.iso8601 }}
+          Hostname: {{ ansible_hostname }}
+          OS: {{ ansible_os_family }} {{ ansible_distribution_version | default('') }}
+          
+          ## Files Backed Up:
+          
+          ### System Configuration
+          - Hostname configuration
+          - Network configuration
+          - DNS configuration
+          - NTP/Chrony configuration
+          
+          ### AD Integration Configuration
+          - SSSD configuration ({{ ad_sssd_config_file }})
+          - Kerberos configuration ({{ ad_kerberos_config_file }})
+          - nsswitch configuration ({{ ad_nsswitch_file }})
+          - PAM configuration (/etc/pam.d/)
+          - SSH configuration ({{ ad_ssh_config_file }})
+          - Sudoers configuration
+          - Samba configuration ({{ ad_samba_config_file }})
+          
+          ### Windows Configuration
+          - Network adapter settings
+          - Group Policy
+          - DNS settings
+          - Firewall rules
+          
+          ## Rollback Procedure:
+          
+          To rollback the AD integration, follow these steps:
+          
+          1. Stop AD-related services
+          2. Restore configuration files from backup:
+             - Linux: cp {{ ad_backup_location }}/{{ ad_config_backup_timestamp }}/*.bak /etc/
+             - Windows: Restore from XML exports
+          3. Restart services
+          4. Verify system connectivity
+          
+          ## Backup Details:
+          
+          Backup Location: {{ ad_backup_location }}/{{ ad_config_backup_timestamp }}
+          Backup Size: (automated system will calculate)
+          Backup Date: {{ ansible_date_time.iso8601 }}
+          Rollback Available: {{ 'Yes' if ad_enable_rollback else 'No' }}
+          
+          ## Important Notes:
+          
+          - Keep this backup safe until integration is verified
+          - Encrypted passwords are NOT backed up
+          - Database files are NOT backed up (too large)
+          - Manual verification may be required for full rollback
+        dest: "{{ ad_backup_location }}/{{ ad_config_backup_timestamp }}/BACKUP_INVENTORY.txt"
+        mode: "0600"
+      become: true
+
+  rescue:
+    - name: "Backup - Display inventory creation error"
+      debug:
+        msg: "Failed to create backup inventory: {{ ansible_failed_result.msg }}"
+
+- name: "Backup - Create system snapshot information"
+  block:
+    - name: "Backup - Capture system state (Linux)"
+      block:
+        - name: "Backup - Capture network state"
+          command: "ip addr show"
+          register: network_state
+          changed_when: false
+
+        - name: "Backup - Save network state"
+          copy:
+            content: "{{ network_state.stdout }}"
+            dest: "{{ ad_backup_location }}/{{ ad_config_backup_timestamp }}/network_state.txt"
+            mode: "0644"
+          become: true
+
+        - name: "Backup - Capture service state"
+          command: "systemctl list-units --type=service --state=running"
+          register: service_state
+          changed_when: false
+
+        - name: "Backup - Save service state"
+          copy:
+            content: "{{ service_state.stdout }}"
+            dest: "{{ ad_backup_location }}/{{ ad_config_backup_timestamp }}/service_state.txt"
+            mode: "0644"
+          become: true
+
+      when: ad_is_linux | bool
+
+  rescue:
+    - name: "Backup - Display system state capture error"
+      debug:
+        msg: "Failed to capture system state: {{ ansible_failed_result.msg }}"
+
+- name: "Backup - Completion notification"
+  debug:
+    msg: |
+      Configuration Backup Completed!
+      ===============================
+      
+      Backup Location: {{ ad_backup_location }}/{{ ad_config_backup_timestamp }}
+      Timestamp: {{ ad_config_backup_timestamp }}
+      
+      All critical configuration files have been backed up.
+      You can now proceed with AD integration.
+      
+      If rollback is needed after integration, restore from:
+      {{ ad_backup_location }}/{{ ad_config_backup_timestamp }}/
+      
+      Keep this backup secure until integration is verified complete.

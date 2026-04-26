@@ -1,0 +1,29 @@
+---
+# Requirements for common_tools.infrastructure collection
+# Install with: ansible-galaxy collection install -r requirements.yml
+
+collections:
+  # Core collection
+  - name: common_tools.infrastructure
+    version: ">=1.0.0"
+  
+  # Ansible built-in collections
+  - name: ansible.windows
+    version: ">=1.0.0"
+  
+  - name: ansible.posix
+    version: ">=1.0.0"
+  
+  # Community collections
+  - name: community.general
+    version: ">=2.0.0"
+  
+  - name: community.windows
+    version: ">=1.0.0"
+
+python_requires:
+  - ">=3.6"
+
+# Optional: Add to your ansible.cfg
+# [defaults]
+# collections_paths = ~/.ansible/collections:/usr/share/ansible/collections

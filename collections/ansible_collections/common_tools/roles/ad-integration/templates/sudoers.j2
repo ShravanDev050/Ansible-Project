@@ -1,0 +1,24 @@
+# This file is managed by Ansible
+# Sudoers configuration for AD integration
+# Generated: {{ ansible_date_time.iso8601 }}
+
+# This file MUST be edited with the 'visudo' command as root.
+# See the sudoers man page for the details on how to write a sudoers file.
+
+# Allow members of AD admin groups to execute commands as root
+{% for group in ad_local_admin_groups %}
+%{{ group }} ALL=(ALL:ALL) ALL
+{% endfor %}
+
+# Allow members of AD sudo group
+{% for group in ad_sssd_ldap_search_base.split(',') %}
+{% if 'ou=sudoers' in group.lower() %}
+# Sudoers from LDAP - configured by SSSD
+{% endif %}
+{% endfor %}
+
+# Default sudo configuration
+Defaults use_pty
+Defaults logfile="/var/log/sudo.log"
+Defaults log_input, log_output
+Defaults requiretty

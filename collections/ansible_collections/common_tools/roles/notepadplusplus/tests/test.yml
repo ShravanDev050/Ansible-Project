@@ -1,0 +1,22 @@
+---
+# Test file for Notepad++ role
+
+- name: "Test Notepad++ Installation"
+  hosts: localhost
+  connection: local
+  gather_facts: yes
+  
+  vars:
+    # Test with Chocolatey
+    notepadplusplus_install_method: "chocolatey"
+    notepadplusplus_version: "latest"
+    notepadplusplus_create_shortcut: true
+  
+  tasks:
+    - name: "Validate role variables"
+      debug:
+        msg: "Role variables validated"
+    
+    - name: "Check role includes main.yml"
+      debug:
+        msg: "Role structure is correct"

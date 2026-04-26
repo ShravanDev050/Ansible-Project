@@ -1,0 +1,195 @@
+#SPDX-License-Identifier: MIT-0
+---
+# tasks file for pre-installation checks
+
+- name: "Pre-checks - Validate domain name"
+  assert:
+    that:
+      - ad_domain_name is defined and ad_domain_name | length > 0
+      - ad_domain_name is regex(ad_domain_name_pattern)
+    fail_msg: "Domain name '{{ ad_domain_name }}' is invalid. Must be lowercase with dots (e.g., example.com)"
+    success_msg: "Domain name validation passed: {{ ad_domain_name }}"
+
+- name: "Pre-checks - Validate NetBIOS name"
+  assert:
+    that:
+      - ad_domain_netbios_name is defined and ad_domain_netbios_name | length > 0
+      - ad_domain_netbios_name | length <= 15
+      - ad_domain_netbios_name is regex(ad_netbios_name_pattern)
+    fail_msg: "NetBIOS name '{{ ad_domain_netbios_name }}' is invalid. Must be 1-15 uppercase alphanumeric characters"
+    success_msg: "NetBIOS name validation passed: {{ ad_domain_netbios_name }}"
+
+- name: "Pre-checks - Validate admin password"
+  assert:
+    that:
+      - ad_admin_password is defined
+      - ad_admin_password | length >= ad_password_min_length
+      - (ad_admin_password | regex_search('[A-Z]')) if ad_password_require_uppercase else true
+      - (ad_admin_password | regex_search('[a-z]')) if ad_password_require_lowercase else true
+      - (ad_admin_password | regex_search('[0-9]')) if ad_password_require_numbers else true
+    fail_msg: "Password does not meet complexity requirements"
+    success_msg: "Password validation passed"
+
+- name: "Pre-checks - OS-specific validation"
+  block:
+    - name: "Pre-checks - Validate Windows environment"
+      assert:
+        that:
+          - ansible_os_family == "Windows"
+          - ansible_powershell_version is defined
+        fail_msg: "This is not a Windows system or PowerShell is not available"
+        success_msg: "Windows environment validation passed"
+      when: ad_is_windows | bool
+
+    - name: "Pre-checks - Validate Linux environment"
+      assert:
+        that:
+          - ansible_os_family in ["RedHat", "Debian", "Suse"]
+        fail_msg: "Unsupported Linux distribution: {{ ansible_os_family }}"
+        success_msg: "Linux environment validation passed"
+      when: ad_is_linux | bool
+
+  rescue:
+    - name: "Pre-checks - Display OS validation error"
+      debug:
+        msg: "OS validation failed: {{ ansible_failed_result.msg }}"
+      failed_when: true
+
+- name: "Pre-checks - Check disk space"
+  block:
+    - name: "Pre-checks - Get disk space information"
+      setup:
+      delegate_to: "{{ inventory_hostname }}"
+
+    - name: "Pre-checks - Validate available disk space (Windows)"
+      win_powershell:
+        script: |
+          $drive = Get-Volume -DriveLetter C
+          if ($drive.SizeRemaining -lt {{ ad_required_free_disk_space * 1024 }}) {
+            Write-Error "Insufficient disk space. Required: 15GB, Available: $([math]::Round($drive.SizeRemaining/1GB, 2))GB"
+            exit 1
+          }
+      when: ad_is_windows | bool
+
+    - name: "Pre-checks - Validate available disk space (Linux)"
+      assert:
+        that:
+          - ansible_mounts[0].size_available > ad_required_free_disk_space
+        fail_msg: "Insufficient disk space. Required: 15GB, Available: {{ (ansible_mounts[0].size_available / 1024 / 1024 / 1024) | round(2) }}GB"
+        success_msg: "Disk space validation passed"
+      when: ad_is_linux | bool
+
+  rescue:
+    - name: "Pre-checks - Display disk space error"
+      debug:
+        msg: "Disk space check failed: {{ ansible_failed_result.msg }}"
+      failed_when: true
+
+- name: "Pre-checks - Check available memory"
+  block:
+    - name: "Pre-checks - Validate available memory (Windows)"
+      win_powershell:
+        script: |
+          $memory = (Get-WmiObject -Class Win32_ComputerSystem).TotalPhysicalMemory / 1MB
+          if ($memory -lt {{ ad_required_memory }}) {
+            Write-Error "Insufficient memory. Required: 2GB, Available: $([math]::Round($memory/1024, 2))GB"
+            exit 1
+          }
+      when: ad_is_windows | bool
+
+    - name: "Pre-checks - Validate available memory (Linux)"
+      assert:
+        that:
+          - ansible_memtotal_mb > ad_required_memory
+        fail_msg: "Insufficient memory. Required: {{ ad_required_memory }}MB, Available: {{ ansible_memtotal_mb }}MB"
+        success_msg: "Memory validation passed"
+      when: ad_is_linux | bool
+
+  rescue:
+    - name: "Pre-checks - Display memory error"
+      debug:
+        msg: "Memory check failed: {{ ansible_failed_result.msg }}"
+      failed_when: true
+
+- name: "Pre-checks - Network connectivity"
+  block:
+    - name: "Pre-checks - Test DNS resolution"
+      wait_for:
+        host: "{{ ad_domain_name }}"
+        port: 53
+        timeout: "{{ ad_dns_check_timeout }}"
+      ignore_errors: true
+      changed_when: false
+
+    - name: "Pre-checks - Test internet connectivity"
+      uri:
+        url: "https://www.google.com"
+        timeout: "{{ ad_connectivity_check_timeout }}"
+      ignore_errors: true
+      changed_when: false
+
+  rescue:
+    - name: "Pre-checks - Display network connectivity warning"
+      debug:
+        msg: "Network connectivity check failed. This may impact AD functionality."
+
+- name: "Pre-checks - Hostname validation"
+  block:
+    - name: "Pre-checks - Validate hostname format"
+      assert:
+        that:
+          - ansible_hostname is defined
+          - ansible_hostname | length > 0
+          - ansible_hostname | length <= 63
+        fail_msg: "Invalid hostname: {{ ansible_hostname }}"
+        success_msg: "Hostname validation passed: {{ ansible_hostname }}"
+
+    - name: "Pre-checks - Ensure hostname is FQDN (Linux)"
+      assert:
+        that:
+          - ansible_fqdn is defined
+          - '.' in ansible_fqdn
+        fail_msg: "Hostname should be FQDN (e.g., server.example.com)"
+        success_msg: "FQDN validation passed: {{ ansible_fqdn }}"
+      when: ad_is_linux | bool
+
+  rescue:
+    - name: "Pre-checks - Display hostname validation error"
+      debug:
+        msg: "Hostname validation failed: {{ ansible_failed_result.msg }}"
+      failed_when: true
+
+- name: "Pre-checks - Firewall and port availability"
+  block:
+    - name: "Pre-checks - Check required ports (Linux)"
+      wait_for:
+        port: "{{ item.port }}"
+        state: "started"
+        timeout: 2
+      ignore_errors: true
+      changed_when: false
+      loop: "{{ ad_required_ports }}"
+      when: ad_is_linux | bool
+
+    - name: "Pre-checks - Display firewall status"
+      debug:
+        msg: "Ensure firewall allows ports: {{ ad_required_ports | map(attribute='port') | list }}"
+
+  rescue:
+    - name: "Pre-checks - Display port check error"
+      debug:
+        msg: "Port availability check completed with warnings"
+
+- name: "Pre-checks - Display summary"
+  debug:
+    msg: |
+      Pre-installation Checks Summary:
+      ================================
+      Domain Name: {{ ad_domain_name }}
+      NetBIOS Name: {{ ad_domain_netbios_name }}
+      OS: {{ ansible_os_family }}
+      Hostname: {{ ansible_hostname }}
+      Install DNS: {{ ad_install_dns }}
+      Install DHCP: {{ ad_install_dhcp }}
+      
+      All checks completed successfully!

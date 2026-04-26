@@ -1,0 +1,77 @@
+# This file is managed by Ansible
+# SSSD configuration for AD integration
+# Generated: {{ ansible_date_time.iso8601 }}
+
+[sssd]
+config_file_version = 2
+domains = {{ ad_domain }}
+services = {{ ad_sssd_services }}
+debug_level = {{ ad_sssd_debug_level }}
+reconnection_retries = -1
+
+[domain/{{ ad_domain }}]
+# Basic domain configuration
+auth_provider = krb5
+id_provider = ldap
+access_provider = simple
+chpass_provider = krb5
+sudo_provider = {{ ad_sssd_sudo_provider }}
+
+# LDAP Configuration
+ldap_uri = {{ ad_sssd_ldap_uri }}
+ldap_search_base = {{ ad_sssd_ldap_search_base }}
+ldap_scope = {{ ad_sssd_ldap_scope }}
+ldap_timeout = {{ ad_sssd_ldap_timeout }}
+
+# Schema and attribute mapping
+ldap_schema = rfc2307bis
+ldap_user_object_class = user
+ldap_group_object_class = group
+ldap_user_name = sAMAccountName
+ldap_group_name = cn
+
+# Automatic ID mapping
+ldap_idmap_range_min = 10000
+ldap_idmap_range_max = 200000
+ldap_idmap_range_size = 200000
+
+# User and group settings
+use_fully_qualified_names = {{ ad_sssd_use_full_qualified_names | lower }}
+fallback_homedir = {{ ad_sssd_fallback_homedir }}
+default_shell = {{ ad_linux_shell_for_ad_users }}
+realms = {{ ad_kerberos_realm }}
+krb5_server = {{ ad_ad_server }}
+krb5_realm = {{ ad_kerberos_realm }}
+
+# Sudo configuration
+ldap_sudo_search_base = ou=sudoers,{{ ad_sssd_ldap_search_base }}
+ldap_sudo_use_host_filter = true
+{% if ad_sssd_sudo_smart_group_lookup %}
+ldap_sudo_smart_group_lookup = true
+{% endif %}
+
+# Cache settings
+cache_credentials = true
+cache_credentials_minimal_pwd_len = 0
+entry_cache_timeout = 600
+entry_cache_user_timeout = 3600
+entry_cache_group_timeout = 3600
+entry_negative_timeout = 15
+
+# Timeouts
+ldap_connection_timeout = 5
+ldap_opt_timeout = 10
+
+# SSL/TLS Configuration
+{% if ad_use_ldaps %}
+ldap_uri = ldaps://{{ ad_ad_server }}:636
+ldap_tls_reqcert = demand
+ldap_tls_cacert = {{ ad_ldaps_ca_cert_path }}
+ldap_tls_cacertdir = /etc/ssl/certs
+{% else %}
+ldap_uri = ldap://{{ ad_ad_server }}:389
+{% endif %}
+
+# Debug and logging
+debug_timestamps = true
+debug_microseconds = false

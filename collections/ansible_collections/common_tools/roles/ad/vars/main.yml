@@ -1,0 +1,126 @@
+#SPDX-License-Identifier: MIT-0
+---
+# vars file for ad - checks and validation variables
+
+# OS Detection
+ad_is_windows: "{{ ansible_os_family == 'Windows' }}"
+ad_is_linux: "{{ ansible_os_family == 'RedHat' or ansible_os_family == 'Debian' or ansible_os_family == 'Suse' }}"
+ad_is_ubuntu: "{{ ansible_distribution == 'Ubuntu' }}"
+ad_is_centos: "{{ ansible_distribution == 'CentOS' }}"
+ad_is_rhel: "{{ ansible_distribution == 'RedHat' }}"
+
+# Pre-check variables
+ad_min_windows_version: "2012"
+ad_required_free_disk_space: 15728640  # 15GB in KB
+ad_required_memory: 2048  # 2GB in MB
+ad_dns_check_timeout: 5
+ad_connectivity_check_timeout: 10
+
+# Windows specific checks
+ad_windows_required_features:
+  - "AD-Domain-Services"
+  - "DNS"
+  - "RSAT-AD-AdminCenter"
+  - "RSAT-ADDS"
+  - "RSAT-Dns-Server"
+
+# Linux specific checks (Samba)
+ad_linux_required_packages_ubuntu:
+  - "samba"
+  - "samba-dsdb-modules"
+  - "samba-vfs-modules"
+  - "krb5-config"
+  - "krb5-user"
+  - "bind9-utils"
+  - "dnsmasq"
+  - "python3-samba"
+
+ad_linux_required_packages_centos:
+  - "samba"
+  - "samba-client"
+  - "samba-common"
+  - "krb5-workstation"
+  - "bind-utils"
+  - "python3-samba"
+  - "openldap-clients"
+
+# Service checks
+ad_critical_services_windows:
+  - "ntds"
+  - "kdc"
+  - "w32time"
+  - "dnscache"
+
+ad_critical_services_linux:
+  - "samba"
+  - "winbind"
+
+# Port checks
+ad_required_ports:
+  - port: 53
+    protocol: "udp"
+    name: "DNS"
+  - port: 53
+    protocol: "tcp"
+    name: "DNS"
+  - port: 88
+    protocol: "tcp"
+    name: "Kerberos"
+  - port: 88
+    protocol: "udp"
+    name: "Kerberos"
+  - port: 123
+    protocol: "udp"
+    name: "NTP"
+  - port: 135
+    protocol: "tcp"
+    name: "RPC"
+  - port: 139
+    protocol: "tcp"
+    name: "NetBIOS"
+  - port: 389
+    protocol: "tcp"
+    name: "LDAP"
+  - port: 389
+    protocol: "udp"
+    name: "LDAP"
+  - port: 445
+    protocol: "tcp"
+    name: "SMB"
+  - port: 636
+    protocol: "tcp"
+    name: "LDAPS"
+  - port: 3268
+    protocol: "tcp"
+    name: "GC"
+  - port: 3269
+    protocol: "tcp"
+    name: "GC SSL"
+  - port: 49152
+    protocol: "tcp"
+    name: "RPC Dynamic"
+
+# Validation patterns
+ad_domain_name_pattern: '^[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?(\.[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?)*$'
+ad_netbios_name_pattern: '^[A-Z0-9][A-Z0-9-]{0,13}[A-Z0-9]$'
+
+# Password requirements
+ad_password_min_length: 12
+ad_password_require_uppercase: true
+ad_password_require_lowercase: true
+ad_password_require_numbers: true
+ad_password_require_special: true
+
+# Check flags for task inclusion
+ad_perform_pre_checks: true
+ad_perform_network_checks: true
+ad_perform_disk_checks: true
+ad_perform_memory_checks: true
+ad_perform_feature_checks: true
+ad_perform_service_checks: false  # Set to true after installation
+ad_perform_replication_checks: false  # For multi-DC environments
+
+# Retry configuration for checks
+ad_check_retry_count: 3
+ad_check_retry_delay: 5  # seconds
+

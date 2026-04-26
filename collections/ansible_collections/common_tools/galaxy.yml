@@ -1,0 +1,50 @@
+---
+namespace: common_tools
+name: infrastructure
+version: 1.0.0
+readme: README.md
+authors:
+  - Your Organization
+license:
+  - MIT
+description: Ansible collection for Active Directory installation and integration across Windows and Linux platforms
+repository: https://github.com/yourorg/common_tools.infrastructure
+documentation: https://docs.example.com/common_tools
+issues: https://github.com/yourorg/common_tools.infrastructure/issues
+tags:
+  - active-directory
+  - ad
+  - windows
+  - linux
+  - samba
+  - sssd
+  - kerberos
+  - domain-join
+  - infrastructure
+  - authentication
+
+build_ignore:
+  - .git
+  - .gitignore
+  - .DS_Store
+  - "*.pyc"
+  - "*.pyo"
+  - __pycache__
+  - .pytest_cache
+  - .venv
+  - venv
+  - "*.swp"
+  - "*.swo"
+  - "*~"
+  - ".idea"
+  - ".vscode"
+
+manifest_format: 2.1
+
+requires_ansible: ">=2.9"
+
+requires_python: ">=3.6"
+
+dependencies: {}
+
+includes_role: true

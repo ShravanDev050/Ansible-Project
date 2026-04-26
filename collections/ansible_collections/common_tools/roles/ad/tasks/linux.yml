@@ -1,0 +1,331 @@
+#SPDX-License-Identifier: MIT-0
+---
+# tasks file for Linux Active Directory installation (Samba)
+
+- name: "Linux AD - Update system packages"
+  block:
+    - name: "Linux AD - Update package manager cache (Debian/Ubuntu)"
+      apt:
+        update_cache: true
+        cache_valid_time: 3600
+      when: ansible_os_family == "Debian"
+
+    - name: "Linux AD - Update package manager cache (RedHat/CentOS)"
+      yum:
+        name: "*"
+        state: "latest"
+      when: ansible_os_family == "RedHat"
+
+  rescue:
+    - name: "Linux AD - Display package update error"
+      debug:
+        msg: "Failed to update packages: {{ ansible_failed_result.msg }}"
+
+- name: "Linux AD - Install required packages (Ubuntu/Debian)"
+  block:
+    - name: "Linux AD - Install Samba and related packages"
+      apt:
+        name: "{{ ad_linux_required_packages_ubuntu }}"
+        state: "present"
+        update_cache: true
+      register: samba_install
+      when: ansible_os_family == "Debian"
+
+  rescue:
+    - name: "Linux AD - Display Ubuntu/Debian package installation error"
+      debug:
+        msg: "Failed to install packages on Debian/Ubuntu: {{ ansible_failed_result.msg }}"
+      failed_when: true
+
+- name: "Linux AD - Install required packages (CentOS/RHEL)"
+  block:
+    - name: "Linux AD - Install Samba and related packages"
+      yum:
+        name: "{{ ad_linux_required_packages_centos }}"
+        state: "present"
+      register: samba_install
+      when: ansible_os_family == "RedHat"
+
+  rescue:
+    - name: "Linux AD - Display CentOS/RHEL package installation error"
+      debug:
+        msg: "Failed to install packages on CentOS/RHEL: {{ ansible_failed_result.msg }}"
+      failed_when: true
+
+- name: "Linux AD - Stop Samba services before provisioning"
+  block:
+    - name: "Linux AD - Stop Samba services"
+      systemd:
+        name: "{{ item }}"
+        state: "stopped"
+        enabled: false
+      loop:
+        - "samba"
+        - "winbind"
+        - "smbd"
+        - "nmbd"
+      ignore_errors: true
+      changed_when: false
+
+  rescue:
+    - name: "Linux AD - Display service stop error"
+      debug:
+        msg: "Failed to stop Samba services: {{ ansible_failed_result.msg }}"
+
+- name: "Linux AD - Backup existing Samba configuration"
+  block:
+    - name: "Linux AD - Check if Samba config exists"
+      stat:
+        path: "/etc/samba/smb.conf"
+      register: smb_conf_stat
+
+    - name: "Linux AD - Backup smb.conf"
+      copy:
+        src: "/etc/samba/smb.conf"
+        dest: "/etc/samba/smb.conf.backup.{{ ansible_date_time.iso8601_basic }}"
+        remote_src: true
+      when: smb_conf_stat.stat.exists
+
+  rescue:
+    - name: "Linux AD - Display backup error"
+      debug:
+        msg: "Failed to backup smb.conf: {{ ansible_failed_result.msg }}"
+
+- name: "Linux AD - Remove existing Samba database"
+  block:
+    - name: "Linux AD - Remove old database files"
+      file:
+        path: "/var/lib/samba/{{ item }}"
+        state: "absent"
+      loop:
+        - "private"
+        - "cache"
+        - "bind-dns"
+      ignore_errors: true
+
+  rescue:
+    - name: "Linux AD - Display database removal error"
+      debug:
+        msg: "Failed to remove old database: {{ ansible_failed_result.msg }}"
+
+- name: "Linux AD - Provision Samba as AD DC"
+  block:
+    - name: "Linux AD - Provision AD domain"
+      command: |
+        samba-tool domain provision \
+          --realm="{{ samba_realm }}" \
+          --domain="{{ ad_domain_netbios_name }}" \
+          --adminpass="{{ ad_admin_password }}" \
+          --server-role="{{ samba_server_role }}" \
+          --dns-backend=SAMBA_INTERNAL
+      register: provision_result
+      become: true
+      changed_when: "'completed successfully' in provision_result.stdout"
+
+    - name: "Linux AD - Display provisioning result"
+      debug:
+        msg: "{{ provision_result.stdout }}"
+
+  rescue:
+    - name: "Linux AD - Display provisioning error"
+      debug:
+        msg: "Failed to provision AD domain: {{ provision_result.stderr | default(ansible_failed_result.msg) }}"
+      failed_when: true
+
+- name: "Linux AD - Kerberos Configuration"
+  block:
+    - name: "Linux AD - Backup krb5.conf"
+      copy:
+        src: "/etc/krb5.conf"
+        dest: "/etc/krb5.conf.backup"
+        remote_src: true
+      ignore_errors: true
+
+    - name: "Linux AD - Copy krb5.conf from Samba"
+      copy:
+        src: "/var/lib/samba/private/krb5.conf"
+        dest: "/etc/krb5.conf"
+        remote_src: true
+        backup: true
+        owner: "root"
+        group: "root"
+        mode: "0644"
+      become: true
+
+  rescue:
+    - name: "Linux AD - Display Kerberos configuration error"
+      debug:
+        msg: "Failed to configure Kerberos: {{ ansible_failed_result.msg }}"
+
+- name: "Linux AD - DNS Configuration"
+  block:
+    - name: "Linux AD - Configure resolv.conf"
+      lineinfile:
+        path: "/etc/resolv.conf"
+        line: "nameserver 127.0.0.1"
+        insertbefore: "BOF"
+        create: true
+      become: true
+
+    - name: "Linux AD - Set DNS forwarders in Samba"
+      command: |
+        samba-tool dns forwarder add 127.0.0.1 \
+          {% for forwarder in ad_dns_forwarders %}{{ forwarder }}{% if not loop.last %} {% endif %}{% endfor %}
+      when: ad_dns_forwarders | length > 0
+      become: true
+      ignore_errors: true
+
+  rescue:
+    - name: "Linux AD - Display DNS configuration error"
+      debug:
+        msg: "Failed to configure DNS: {{ ansible_failed_result.msg }}"
+
+- name: "Linux AD - NTP/Time Configuration"
+  block:
+    - name: "Linux AD - Install chrony (time synchronization)"
+      package:
+        name: "chrony"
+        state: "present"
+      when: ansible_os_family == "Debian"
+
+    - name: "Linux AD - Install chrony (CentOS/RHEL)"
+      yum:
+        name: "chrony"
+        state: "present"
+      when: ansible_os_family == "RedHat"
+
+    - name: "Linux AD - Configure chrony for NTP"
+      template:
+        src: "chrony.conf.j2"
+        dest: "/etc/chrony.conf"
+        backup: true
+        owner: "root"
+        group: "root"
+        mode: "0644"
+      register: chrony_config
+      become: true
+
+    - name: "Linux AD - Restart chronyd service"
+      systemd:
+        name: "chronyd"
+        state: "restarted"
+        enabled: true
+        daemon_reload: true
+      become: true
+      when: chrony_config is changed
+
+  rescue:
+    - name: "Linux AD - Display NTP configuration error"
+      debug:
+        msg: "Failed to configure NTP: {{ ansible_failed_result.msg }}"
+
+- name: "Linux AD - Start and enable Samba services"
+  block:
+    - name: "Linux AD - Start Samba services"
+      systemd:
+        name: "{{ item }}"
+        state: "started"
+        enabled: true
+        daemon_reload: true
+      loop:
+        - "samba"
+        - "winbind"
+      register: samba_start
+      become: true
+
+  rescue:
+    - name: "Linux AD - Display service start error"
+      debug:
+        msg: "Failed to start Samba services: {{ ansible_failed_result.msg }}"
+      failed_when: true
+
+- name: "Linux AD - Firewall Configuration (ufw)"
+  block:
+    - name: "Linux AD - Check if ufw is installed"
+      command: "which ufw"
+      register: ufw_check
+      changed_when: false
+      ignore_errors: true
+
+    - name: "Linux AD - Configure firewall rules"
+      ufw:
+        rule: "allow"
+        port: "{{ item.port }}"
+        proto: "{{ item.protocol }}"
+        state: "enabled"
+      loop: "{{ ad_required_ports }}"
+      when: ufw_check.rc == 0
+      become: true
+
+  rescue:
+    - name: "Linux AD - Display firewall configuration error"
+      debug:
+        msg: "Failed to configure firewall: {{ ansible_failed_result.msg }}"
+
+- name: "Linux AD - Firewall Configuration (firewalld)"
+  block:
+    - name: "Linux AD - Check if firewalld is installed"
+      command: "which firewall-cmd"
+      register: firewalld_check
+      changed_when: false
+      ignore_errors: true
+
+    - name: "Linux AD - Configure firewalld rules"
+      firewalld:
+        port: "{{ item.port }}/{{ item.protocol }}"
+        state: "enabled"
+        permanent: true
+        immediate: true
+      loop: "{{ ad_required_ports }}"
+      when: firewalld_check.rc == 0
+      become: true
+
+  rescue:
+    - name: "Linux AD - Display firewalld configuration error"
+      debug:
+        msg: "Failed to configure firewalld: {{ ansible_failed_result.msg }}"
+
+- name: "Linux AD - SELinux Configuration"
+  block:
+    - name: "Linux AD - Check if SELinux is enabled"
+      command: "getenforce"
+      register: selinux_status
+      changed_when: false
+      ignore_errors: true
+
+    - name: "Linux AD - Set SELinux context for Samba"
+      sefcontext:
+        target: "/var/lib/samba(/.*)?"
+        setype: "samba_var_t"
+        state: "present"
+      become: true
+      when: selinux_status.stdout == "Enforcing"
+      ignore_errors: true
+
+  rescue:
+    - name: "Linux AD - Display SELinux configuration error"
+      debug:
+        msg: "Failed to configure SELinux: {{ ansible_failed_result.msg }}"
+
+- name: "Linux AD - Verification and Testing"
+  block:
+    - name: "Linux AD - Test Samba domain functionality"
+      command: "samba-tool forest info 127.0.0.1"
+      register: forest_info
+      become: true
+      changed_when: false
+
+    - name: "Linux AD - Display forest information"
+      debug:
+        msg: "{{ forest_info.stdout }}"
+
+    - name: "Linux AD - Test LDAP connectivity"
+      command: "ldapwhoami -H ldap://127.0.0.1"
+      register: ldap_test
+      changed_when: false
+      ignore_errors: true
+
+  rescue:
+    - name: "Linux AD - Display verification error"
+      debug:
+        msg: "Failed verification: {{ ansible_failed_result.msg }}"

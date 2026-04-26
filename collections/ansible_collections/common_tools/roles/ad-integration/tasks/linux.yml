@@ -1,0 +1,413 @@
+#SPDX-License-Identifier: MIT-0
+---
+# tasks file for Linux Active Directory integration (SSSD and Winbind)
+
+- name: "Linux Integration - Update system packages"
+  block:
+    - name: "Linux Integration - Update package manager (Debian/Ubuntu)"
+      apt:
+        update_cache: true
+        cache_valid_time: 3600
+      when: ansible_os_family == "Debian"
+
+    - name: "Linux Integration - Update package manager (RedHat/CentOS)"
+      yum:
+        update_cache: true
+      when: ansible_os_family == "RedHat"
+
+  rescue:
+    - name: "Linux Integration - Display package update error"
+      debug:
+        msg: "Package update failed: {{ ansible_failed_result.msg }}"
+
+- name: "Linux Integration - Install required packages for SSSD (Debian/Ubuntu)"
+  block:
+    - name: "Linux Integration - Install SSSD packages"
+      apt:
+        name: "{{ ad_sssd_required_packages_ubuntu }}"
+        state: "present"
+        update_cache: true
+      register: sssd_install
+      when: 
+        - ansible_os_family == "Debian"
+        - ad_linux_use_sssd | bool
+
+  rescue:
+    - name: "Linux Integration - Display SSSD installation error"
+      debug:
+        msg: "SSSD installation failed: {{ ansible_failed_result.msg }}"
+      failed_when: not ad_continue_on_package_error | bool
+
+- name: "Linux Integration - Install required packages for SSSD (RedHat/CentOS)"
+  block:
+    - name: "Linux Integration - Install SSSD packages"
+      yum:
+        name: "{{ ad_sssd_required_packages_centos }}"
+        state: "present"
+      register: sssd_install
+      when: 
+        - ansible_os_family == "RedHat"
+        - ad_linux_use_sssd | bool
+
+  rescue:
+    - name: "Linux Integration - Display SSSD installation error"
+      debug:
+        msg: "SSSD installation failed: {{ ansible_failed_result.msg }}"
+      failed_when: not ad_continue_on_package_error | bool
+
+- name: "Linux Integration - Install required packages for Winbind (Debian/Ubuntu)"
+  block:
+    - name: "Linux Integration - Install Winbind packages"
+      apt:
+        name: "{{ ad_winbind_required_packages_ubuntu }}"
+        state: "present"
+        update_cache: true
+      register: winbind_install
+      when: 
+        - ansible_os_family == "Debian"
+        - ad_linux_use_winbind | bool
+
+  rescue:
+    - name: "Linux Integration - Display Winbind installation error"
+      debug:
+        msg: "Winbind installation failed: {{ ansible_failed_result.msg }}"
+      failed_when: not ad_continue_on_package_error | bool
+
+- name: "Linux Integration - Install required packages for Winbind (RedHat/CentOS)"
+  block:
+    - name: "Linux Integration - Install Winbind packages"
+      yum:
+        name: "{{ ad_winbind_required_packages_centos }}"
+        state: "present"
+      register: winbind_install
+      when: 
+        - ansible_os_family == "RedHat"
+        - ad_linux_use_winbind | bool
+
+  rescue:
+    - name: "Linux Integration - Display Winbind installation error"
+      debug:
+        msg: "Winbind installation failed: {{ ansible_failed_result.msg }}"
+      failed_when: not ad_continue_on_package_error | bool
+
+- name: "Linux Integration - Configure Kerberos"
+  block:
+    - name: "Linux Integration - Deploy Kerberos configuration"
+      template:
+        src: "krb5.conf.j2"
+        dest: "{{ ad_kerberos_config_file }}"
+        backup: true
+        owner: "root"
+        group: "root"
+        mode: "0644"
+      register: krb_config
+      when: ad_configure_kerberos | bool
+
+  rescue:
+    - name: "Linux Integration - Display Kerberos configuration error"
+      debug:
+        msg: "Failed to configure Kerberos: {{ ansible_failed_result.msg }}"
+
+- name: "Linux Integration - Configure SSSD"
+  block:
+    - name: "Linux Integration - Deploy SSSD configuration"
+      template:
+        src: "sssd.conf.j2"
+        dest: "{{ ad_sssd_config_file }}"
+        backup: true
+        owner: "root"
+        group: "root"
+        mode: "0600"
+      register: sssd_config
+      when: ad_linux_use_sssd | bool
+      notify: "Restart SSSD"
+
+    - name: "Linux Integration - Create SSSD directory"
+      file:
+        path: "/var/lib/sss"
+        state: "directory"
+        owner: "root"
+        group: "root"
+        mode: "0700"
+      when: ad_linux_use_sssd | bool
+
+  rescue:
+    - name: "Linux Integration - Display SSSD configuration error"
+      debug:
+        msg: "Failed to configure SSSD: {{ ansible_failed_result.msg }}"
+
+- name: "Linux Integration - Configure nsswitch"
+  block:
+    - name: "Linux Integration - Update nsswitch.conf for SSSD"
+      template:
+        src: "nsswitch.conf.j2"
+        dest: "{{ ad_nsswitch_file }}"
+        backup: true
+        owner: "root"
+        group: "root"
+        mode: "0644"
+      register: nsswitch_config
+      when: ad_linux_use_sssd | bool
+      notify: "Restart SSSD"
+
+  rescue:
+    - name: "Linux Integration - Display nsswitch configuration error"
+      debug:
+        msg: "Failed to configure nsswitch: {{ ansible_failed_result.msg }}"
+
+- name: "Linux Integration - Configure PAM"
+  block:
+    - name: "Linux Integration - Deploy PAM configuration"
+      template:
+        src: "pam-sssd.j2"
+        dest: "/etc/pam.d/common-auth-ad"
+        backup: true
+        owner: "root"
+        group: "root"
+        mode: "0644"
+      register: pam_config
+      when: 
+        - ad_configure_pam | bool
+        - ad_linux_use_sssd | bool
+
+    - name: "Linux Integration - Update PAM configuration for home directory creation"
+      lineinfile:
+        path: "{{ ad_pam_session_file }}"
+        line: "session optional pam_mkhomedir.so skel=/etc/skel umask=0077"
+        regexp: "^session.*pam_mkhomedir.so"
+        state: "present"
+      when: 
+        - ad_configure_pam | bool
+        - ad_linux_enable_home_directory_creation | bool
+
+  rescue:
+    - name: "Linux Integration - Display PAM configuration error"
+      debug:
+        msg: "Failed to configure PAM: {{ ansible_failed_result.msg }}"
+
+- name: "Linux Integration - Configure SSH for AD integration"
+  block:
+    - name: "Linux Integration - Update SSH configuration"
+      lineinfile:
+        path: "{{ ad_ssh_config_file }}"
+        line: "{{ item }}"
+        regexp: "^{{ item.split()[0] }}"
+        state: "present"
+      loop:
+        - "PubkeyAuthentication yes"
+        - "AuthorizedKeysCommand /usr/bin/sss_ssh_authorizedkeys"
+        - "AuthorizedKeysCommandUser nobody"
+      when: ad_configure_ssh | bool
+      notify: "Restart SSH"
+
+  rescue:
+    - name: "Linux Integration - Display SSH configuration error"
+      debug:
+        msg: "Failed to configure SSH: {{ ansible_failed_result.msg }}"
+
+- name: "Linux Integration - Configure sudo for AD groups"
+  block:
+    - name: "Linux Integration - Deploy sudo configuration for AD groups"
+      template:
+        src: "sudoers.j2"
+        dest: "{{ ad_sudoers_file }}"
+        backup: true
+        owner: "root"
+        group: "root"
+        mode: "0440"
+        validate: "/usr/sbin/visudo -c -f %s"
+      register: sudoers_config
+      when: 
+        - ad_configure_sudoers | bool
+        - ad_sssd_sudo_provider == "ldap"
+
+  rescue:
+    - name: "Linux Integration - Display sudoers configuration error"
+      debug:
+        msg: "Failed to configure sudoers: {{ ansible_failed_result.msg }}"
+
+- name: "Linux Integration - Join domain using realmd"
+  block:
+    - name: "Linux Integration - Join domain with realmd"
+      shell: |
+        realm join \
+          --user="{{ ad_username }}" \
+          --password-file=/dev/stdin \
+          {{ ad_domain }} <<< "{{ ad_password }}"
+      register: realm_join_result
+      until: realm_join_result is succeeded
+      retries: "{{ ad_domain_join_retry_count }}"
+      delay: "{{ ad_domain_join_retry_delay }}"
+      no_log: true
+      when: ad_linux_use_sssd | bool
+
+    - name: "Linux Integration - Domain join completed"
+      debug:
+        msg: "Successfully joined domain: {{ ad_domain }}"
+      when: realm_join_result is succeeded
+
+  rescue:
+    - name: "Linux Integration - Display domain join error"
+      debug:
+        msg: "Failed to join domain: {{ ansible_failed_result.msg }}"
+      failed_when: "{{ ad_rollback_on_failure | bool }}"
+
+- name: "Linux Integration - Configure Samba/Winbind (Alternative)"
+  block:
+    - name: "Linux Integration - Deploy Samba configuration for Winbind"
+      template:
+        src: "smb.conf.j2"
+        dest: "{{ ad_samba_config_file }}"
+        backup: true
+        owner: "root"
+        group: "root"
+        mode: "0644"
+      register: samba_config
+      when: ad_linux_use_winbind | bool
+      notify: "Restart Samba"
+
+    - name: "Linux Integration - Join domain using net ads join"
+      shell: |
+        net ads join \
+          -U "{{ ad_username }}%{{ ad_password }}" \
+          -S "{{ ad_ad_server }}"
+      register: net_ads_join
+      until: net_ads_join is succeeded
+      retries: "{{ ad_domain_join_retry_count }}"
+      delay: "{{ ad_domain_join_retry_delay }}"
+      no_log: true
+      when: ad_linux_use_winbind | bool
+
+  rescue:
+    - name: "Linux Integration - Display Winbind configuration error"
+      debug:
+        msg: "Failed to configure Winbind: {{ ansible_failed_result.msg }}"
+
+- name: "Linux Integration - Start and enable services"
+  block:
+    - name: "Linux Integration - Start SSSD service"
+      systemd:
+        name: "sssd"
+        state: "started"
+        enabled: true
+        daemon_reload: true
+      register: sssd_start
+      when: ad_linux_use_sssd | bool
+      notify: "Restart SSSD"
+
+    - name: "Linux Integration - Start Samba services"
+      systemd:
+        name: "{{ item }}"
+        state: "started"
+        enabled: true
+        daemon_reload: true
+      loop:
+        - "smbd"
+        - "nmbd"
+        - "winbind"
+      register: samba_start
+      when: ad_linux_use_winbind | bool
+      ignore_errors: true
+
+  rescue:
+    - name: "Linux Integration - Display service start error"
+      debug:
+        msg: "Failed to start services: {{ ansible_failed_result.msg }}"
+      failed_when: true
+
+- name: "Linux Integration - Configure firewall (ufw)"
+  block:
+    - name: "Linux Integration - Check if ufw is installed"
+      command: "which ufw"
+      register: ufw_check
+      changed_when: false
+      ignore_errors: true
+
+    - name: "Linux Integration - Open required ports"
+      ufw:
+        rule: "allow"
+        port: "{{ item.port | string }}"
+        proto: "{{ item.protocol }}"
+        state: "enabled"
+      loop: "{{ ad_required_ports }}"
+      when: 
+        - ufw_check.rc == 0
+        - ad_configure_firewall | bool
+
+  rescue:
+    - name: "Linux Integration - Display ufw configuration error"
+      debug:
+        msg: "Failed to configure ufw: {{ ansible_failed_result.msg }}"
+
+- name: "Linux Integration - Configure firewall (firewalld)"
+  block:
+    - name: "Linux Integration - Check if firewalld is installed"
+      command: "which firewall-cmd"
+      register: firewalld_check
+      changed_when: false
+      ignore_errors: true
+
+    - name: "Linux Integration - Open required ports"
+      firewalld:
+        port: "{{ item.port }}/{{ item.protocol }}"
+        state: "enabled"
+        permanent: true
+        immediate: true
+      loop: "{{ ad_required_ports }}"
+      when: 
+        - firewalld_check.rc == 0
+        - ad_configure_firewall | bool
+
+  rescue:
+    - name: "Linux Integration - Display firewalld configuration error"
+      debug:
+        msg: "Failed to configure firewalld: {{ ansible_failed_result.msg }}"
+
+- name: "Linux Integration - Update hostname"
+  block:
+    - name: "Linux Integration - Set hostname"
+      hostname:
+        name: "{% if ad_hostname_domain_suffix %}{{ ad_hostname_prefix }}{{ ansible_hostname }}.{{ ad_domain }}{% else %}{{ ad_hostname_prefix }}{{ ansible_hostname }}{% endif %}"
+      when: ad_update_hostname | bool
+
+  rescue:
+    - name: "Linux Integration - Display hostname update error"
+      debug:
+        msg: "Failed to update hostname: {{ ansible_failed_result.msg }}"
+
+- name: "Linux Integration - Configure DNS"
+  block:
+    - name: "Linux Integration - Update resolv.conf"
+      template:
+        src: "resolv.conf.j2"
+        dest: "/etc/resolv.conf"
+        backup: true
+        owner: "root"
+        group: "root"
+        mode: "0644"
+      register: dns_config
+      when: ad_configure_dns | bool
+
+  rescue:
+    - name: "Linux Integration - Display DNS configuration error"
+      debug:
+        msg: "Failed to configure DNS: {{ ansible_failed_result.msg }}"
+
+- name: "Linux Integration - Configure NTP/Chrony"
+  block:
+    - name: "Linux Integration - Deploy Chrony configuration"
+      template:
+        src: "chrony.conf.j2"
+        dest: "/etc/chrony.conf"
+        backup: true
+        owner: "root"
+        group: "root"
+        mode: "0644"
+      register: chrony_config
+      when: ad_configure_ntp | bool
+      notify: "Restart Chrony"
+
+  rescue:
+    - name: "Linux Integration - Display NTP configuration error"
+      debug:
+        msg: "Failed to configure NTP: {{ ansible_failed_result.msg }}"

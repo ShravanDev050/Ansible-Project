@@ -1,0 +1,168 @@
+---
+# Pre-installation checks for Notepad++ role
+
+- name: "Validate installation method"
+  assert:
+    that:
+      - notepadplusplus_install_method in notepadplusplus_valid_install_methods
+    fail_msg: "Invalid installation method. Must be one of: {{ notepadplusplus_valid_install_methods | join(', ') }}"
+
+- name: "Validate font size"
+  assert:
+    that:
+      - notepadplusplus_font_size > 0
+      - notepadplusplus_font_size <= 72
+    fail_msg: "Font size must be between 1 and 72"
+
+- name: "Validate version is specified"
+  assert:
+    that:
+      - notepadplusplus_version | length > 0
+    fail_msg: "Notepad++ version must be specified"
+
+- name: "Validate download retries"
+  assert:
+    that:
+      - notepadplusplus_download_retries > 0
+    fail_msg: "Download retries must be greater than 0"
+
+- name: "Validate download timeout"
+  assert:
+    that:
+      - notepadplusplus_download_timeout > 0
+    fail_msg: "Download timeout must be greater than 0"
+
+- name: "Validate install path"
+  assert:
+    that:
+      - notepadplusplus_install_path | length > 0
+      - notepadplusplus_install_path.startswith('C:\\') or notepadplusplus_install_path.startswith('D:\\')
+    fail_msg: "Invalid installation path: {{ notepadplusplus_install_path }}"
+
+- name: "Check Windows version compatibility"
+  win_shell: |
+    [System.Environment]::OSVersion.Version.Major.ToString() + "." + [System.Environment]::OSVersion.Version.Minor.ToString()
+  register: windows_version
+  changed_when: false
+
+- name: "Validate Windows version"
+  assert:
+    that:
+      - windows_version.stdout | trim | float >= notepadplusplus_min_windows_version | float
+    fail_msg: "Windows version {{ windows_version.stdout | trim }} is not supported. Minimum required: {{ notepadplusplus_min_windows_version }}"
+
+- name: "Check if running as administrator"
+  win_shell: |
+    [System.Security.Principal.WindowsIdentity]::GetCurrent() | ForEach-Object { if ($_.Groups -match "S-1-5-32-544") { Write-Output "True" } else { Write-Output "False" } }
+  register: is_admin
+  changed_when: false
+
+- name: "Assert administrator privileges"
+  assert:
+    that:
+      - is_admin.stdout | trim | bool
+    fail_msg: "Administrator privileges are required to install Notepad++"
+
+- name: "Check available disk space"
+  win_shell: |
+    $drive = Split-Path -Path "{{ notepadplusplus_install_path }}" -Qualifier
+    $diskInfo = Get-Volume -DriveLetter $drive.TrimEnd(':')
+    [math]::Round($diskInfo.SizeRemaining / 1MB, 2)
+  register: available_disk_space
+  changed_when: false
+
+- name: "Validate available disk space"
+  assert:
+    that:
+      - available_disk_space.stdout | trim | float >= notepadplusplus_required_disk_space | float
+    fail_msg: "Insufficient disk space. Required: {{ notepadplusplus_required_disk_space }}MB, Available: {{ available_disk_space.stdout | trim }}MB"
+
+- name: "Check for existing installation"
+  win_stat:
+    path: "{{ item }}"
+  loop: "{{ notepadplusplus_common_install_paths }}"
+  register: existing_installations
+
+- name: "Set existing installation fact"
+  set_fact:
+    notepadplusplus_already_installed: "{{ existing_installations.results | selectattr('stat.exists', 'equalto', True) | list | length > 0 }}"
+
+- name: "Check if installation should proceed"
+  block:
+    - name: "Existing installation found"
+      debug:
+        msg: "Notepad++ is already installed. Set notepadplusplus_force_install=true to reinstall."
+      when: not notepadplusplus_force_install | bool
+    
+    - name: "Assert force installation if already installed"
+      assert:
+        that:
+          - notepadplusplus_force_install | bool or not notepadplusplus_already_installed
+        fail_msg: "Notepad++ is already installed. Set notepadplusplus_force_install=true to reinstall."
+  when: notepadplusplus_already_installed | bool
+
+- name: "Check internet connectivity for download-based installations"
+  win_shell: |
+    try {
+      $result = [System.Net.ServicePointManager]::ServerCertificateValidationCallback = { $true }
+      $response = Invoke-WebRequest -Uri "{{ notepadplusplus_github_api_url }}" -UseBasicParsing -TimeoutSec 5
+      if ($response.StatusCode -eq 200) {
+        Write-Output "True"
+      } else {
+        Write-Output "False"
+      }
+    } catch {
+      Write-Output "False"
+    }
+  register: internet_connectivity
+  changed_when: false
+  when: notepadplusplus_download_required | bool
+
+- name: "Validate internet connectivity"
+  assert:
+    that:
+      - internet_connectivity.stdout | trim | bool
+    fail_msg: "No internet connectivity detected. Cannot download Notepad++"
+  when: notepadplusplus_download_required | bool
+
+- name: "Check if Chocolatey is installed"
+  win_shell: |
+    try {
+      $chocPath = Get-Command choco.exe -ErrorAction Stop
+      Write-Output "True"
+    } catch {
+      Write-Output "False"
+    }
+  register: chocolatey_installed
+  changed_when: false
+  when: notepadplusplus_install_method == 'chocolatey'
+
+- name: "Validate Chocolatey installation"
+  assert:
+    that:
+      - chocolatey_installed.stdout | trim | bool
+    fail_msg: "Chocolatey is not installed. Please install Chocolatey first or use a different installation method."
+  when: notepadplusplus_install_method == 'chocolatey'
+
+- name: "Create log directory if logging is enabled"
+  win_file:
+    path: "{{ notepadplusplus_log_dir }}"
+    state: directory
+  when: notepadplusplus_enable_logging | bool
+
+- name: "Log pre-check completion"
+  win_shell: |
+    "Pre-checks completed successfully at $(Get-Date)" | Add-Content -Path "{{ notepadplusplus_log_dir }}\notepadplusplus-install.log"
+  when: notepadplusplus_enable_logging | bool
+  ignore_errors: yes
+
+- name: "Display pre-check summary"
+  debug:
+    msg:
+      - "====== Pre-Installation Checks Passed ======"
+      - "Windows Version: {{ windows_version.stdout | trim }}"
+      - "Administrator: Yes"
+      - "Available Disk Space: {{ available_disk_space.stdout | trim }}MB"
+      - "Internet Connectivity: {{ internet_connectivity.stdout | trim | default('N/A') }}"
+      - "Already Installed: {{ notepadplusplus_already_installed }}"
+      - "=========================================\n"

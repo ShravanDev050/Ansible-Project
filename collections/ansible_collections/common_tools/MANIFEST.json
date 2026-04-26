@@ -1,0 +1,75 @@
+{
+  "collection_info": {
+    "namespace": "common_tools",
+    "name": "infrastructure",
+    "version": "1.0.0",
+    "authors": [
+      "Your Organization"
+    ],
+    "readme": "README.md",
+    "repository": "https://github.com/yourorg/common_tools.infrastructure",
+    "issues": "https://github.com/yourorg/common_tools.infrastructure/issues",
+    "description": "Ansible collection for Active Directory installation and integration across Windows and Linux platforms",
+    "license": [
+      "MIT"
+    ],
+    "tags": [
+      "active-directory",
+      "ad",
+      "windows",
+      "linux",
+      "samba",
+      "sssd",
+      "kerberos",
+      "domain-join",
+      "infrastructure",
+      "authentication"
+    ]
+  },
+  "file_manifest": {
+    "files": [
+      {
+        "name": "README.md",
+        "ftype": "file",
+        "chksum_type": "sha256",
+        "chksum_value": ""
+      },
+      {
+        "name": "galaxy.yml",
+        "ftype": "file",
+        "chksum_type": "sha256",
+        "chksum_value": ""
+      },
+      {
+        "name": "roles/ad/",
+        "ftype": "dir"
+      },
+      {
+        "name": "roles/ad-integration/",
+        "ftype": "dir"
+      },
+      {
+        "name": "docs/",
+        "ftype": "dir"
+      }
+    ],
+    "directories": [
+      "roles/",
+      "roles/ad/",
+      "roles/ad/defaults/",
+      "roles/ad/handlers/",
+      "roles/ad/meta/",
+      "roles/ad/tasks/",
+      "roles/ad/templates/",
+      "roles/ad/vars/",
+      "roles/ad-integration/",
+      "roles/ad-integration/defaults/",
+      "roles/ad-integration/handlers/",
+      "roles/ad-integration/meta/",
+      "roles/ad-integration/tasks/",
+      "roles/ad-integration/templates/",
+      "roles/ad-integration/vars/",
+      "docs/"
+    ]
+  }
+}

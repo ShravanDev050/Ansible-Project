@@ -1,0 +1,77 @@
+#SPDX-License-Identifier: MIT-0
+---
+# handlers file for ad
+
+- name: "Restart Samba"
+  systemd:
+    name: "samba"
+    state: "restarted"
+    daemon_reload: true
+  listen: "Restart Samba"
+  when: ad_is_linux | bool
+  become: true
+
+- name: "Restart winbind"
+  systemd:
+    name: "winbind"
+    state: "restarted"
+    daemon_reload: true
+  listen: "Restart winbind"
+  when: ad_is_linux | bool
+  become: true
+
+- name: "Restart NTDS"
+  win_service:
+    name: "NTDS"
+    state: "restarted"
+  listen: "Restart NTDS"
+  when: ad_is_windows | bool
+
+- name: "Restart DNS"
+  win_service:
+    name: "DNS"
+    state: "restarted"
+  listen: "Restart DNS"
+  when: ad_is_windows | bool
+
+- name: "Restart w32time"
+  win_service:
+    name: "w32time"
+    state: "restarted"
+  listen: "Restart w32time"
+  when: ad_is_windows | bool
+
+- name: "Sync time"
+  command: "net stop w32time && net start w32time"
+  listen: "Sync time"
+  when: ad_is_windows | bool
+
+- name: "Reload Samba configuration"
+  command: "smbcontrol all reload-config"
+  listen: "Reload Samba configuration"
+  when: ad_is_linux | bool
+  become: true
+  ignore_errors: true
+
+- name: "Reload Kerberos"
+  command: "kinit -k"
+  listen: "Reload Kerberos"
+  when: ad_is_linux | bool
+  become: true
+  ignore_errors: true
+
+- name: "Force AD replication"
+  win_powershell:
+    script: |
+      Get-ADDomain | %{ Get-ADDomainController -Filter * } | %{ 
+        Sync-ADObject -Identity $_ -Source (Get-ADDomainController -Discover).HostName
+      }
+  listen: "Force AD replication"
+  when: ad_is_windows | bool
+  ignore_errors: true
+
+- name: "Flush DNS cache"
+  win_command: "ipconfig /flushdns"
+  listen: "Flush DNS cache"
+  when: ad_is_windows | bool
+

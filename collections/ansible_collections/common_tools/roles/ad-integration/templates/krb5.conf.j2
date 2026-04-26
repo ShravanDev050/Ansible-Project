@@ -1,0 +1,41 @@
+# This file is managed by Ansible
+# Kerberos configuration for AD integration
+# Generated: {{ ansible_date_time.iso8601 }}
+
+[libdefaults]
+  default_realm = {{ ad_kerberos_realm }}
+  dns_lookup_realm = true
+  dns_lookup_kdc = true
+  forwardable = true
+  proxiable = true
+  allow_weak_crypto = false
+  ccache_type = 4
+  permitted_enctypes = aes256-cts-hmac-sha1-96 aes128-cts-hmac-sha1-96
+  default_tkt_enctypes = aes256-cts-hmac-sha1-96 aes128-cts-hmac-sha1-96
+  default_tgs_enctypes = aes256-cts-hmac-sha1-96 aes128-cts-hmac-sha1-96
+
+[realms]
+  {{ ad_kerberos_realm }} = {
+    kdc = {{ ad_ad_server }}:88
+    admin_server = {{ ad_ad_server }}:749
+    master_kdc = {{ ad_ad_server }}:88
+    default_domain = {{ ad_domain }}
+  }
+
+[domain_realm]
+  {{ ad_domain }} = {{ ad_kerberos_realm }}
+  .{{ ad_domain }} = {{ ad_kerberos_realm }}
+
+[logging]
+  kdc = FILE:/var/log/krb5/kdc.log
+  admin_server = FILE:/var/log/krb5/kadmin.log
+  default = FILE:/var/log/krb5/krb5.log
+
+[appdefaults]
+  pam = {
+    debug = false
+    ticket_lifetime = 36000
+    renew_lifetime = 36000
+    forwardable = true
+    krb4_convert = false
+  }

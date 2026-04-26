@@ -1,0 +1,110 @@
+---
+# Configuration tasks for Notepad++ after installation
+
+- name: "Add Notepad++ to PATH environment variable"
+  win_path:
+    elements: "{{ notepadplusplus_install_path }}"
+    scope: machine
+    state: present
+  when: notepadplusplus_add_to_path | bool
+
+- name: "Create Start Menu shortcut"
+  win_shell: |
+    $startMenu = [Environment]::GetFolderPath('StartMenu')
+    $programsPath = Join-Path $startMenu "Programs"
+    $shell = New-Object -ComObject WScript.Shell
+    $shortcut = $shell.CreateShortcut("$programsPath\Notepad++.lnk")
+    $shortcut.TargetPath = "{{ notepadplusplus_exe_path }}"
+    $shortcut.WorkingDirectory = "$env:USERPROFILE"
+    $shortcut.IconLocation = "{{ notepadplusplus_exe_path }}, 0"
+    $shortcut.Description = "Notepad++ - Text Editor"
+    $shortcut.Save()
+    Write-Output "Start Menu shortcut created"
+  when: notepadplusplus_create_shortcut | bool
+
+- name: "Create Desktop shortcut"
+  win_shell: |
+    $desktop = [Environment]::GetFolderPath('Desktop')
+    $shell = New-Object -ComObject WScript.Shell
+    $shortcut = $shell.CreateShortcut("$desktop\Notepad++.lnk")
+    $shortcut.TargetPath = "{{ notepadplusplus_exe_path }}"
+    $shortcut.WorkingDirectory = "$env:USERPROFILE"
+    $shortcut.IconLocation = "{{ notepadplusplus_exe_path }}, 0"
+    $shortcut.Description = "Notepad++ - Text Editor"
+    $shortcut.Save()
+    Write-Output "Desktop shortcut created"
+  when: notepadplusplus_create_desktop_shortcut | bool
+
+- name: "Configure file associations"
+  win_regedit:
+    path: "HKCU:\\Software\\Microsoft\\Windows\\CurrentVersion\\Explorer\\FileExts\\{{ item }}\\UserChoice"
+    name: "ProgId"
+    data: "Notepad++.file"
+    type: "string"
+    state: present
+  loop: "{{ notepadplusplus_file_associations }}"
+  ignore_errors: yes
+  when: notepadplusplus_configure_file_associations | bool
+
+- name: "Register file associations in registry (alternative method)"
+  win_shell: |
+    $fileTypes = @({{ notepadplusplus_file_associations | map(quote='"') | join(', ') }})
+    $exePath = "{{ notepadplusplus_exe_path }}"
+    
+    foreach ($type in $fileTypes) {
+      # Register file type with Notepad++
+      $regPath = "HKCU:\Software\Microsoft\Windows\CurrentVersion\Explorer\FileExts\$type\UserChoice"
+      if (-not (Test-Path $regPath)) {
+        New-Item -Path $regPath -Force | Out-Null
+      }
+    }
+    
+    Write-Output "File associations configured"
+  when: notepadplusplus_configure_file_associations | bool
+  ignore_errors: yes
+
+- name: "Configure Notepad++ settings via config file"
+  block:
+    - name: "Create Notepad++ config directory"
+      win_file:
+        path: "{{ ansible_env.APPDATA }}\\Notepad++"
+        state: directory
+    
+    - name: "Create preferences configuration"
+      win_copy:
+        content: |
+          <?xml version="1.0" encoding="UTF-8" ?>
+          <NotepadPlus>
+            <!-- Font Configuration -->
+            <GUIConfigs>
+              <GUIConfig name="FontName">{{ notepadplusplus_font_name }}</GUIConfig>
+              <GUIConfig name="FontSize">{{ notepadplusplus_font_size }}</GUIConfig>
+              <GUIConfig name="SourceViewerAutoUpdate">{{ notepadplusplus_enable_auto_update | lower }}</GUIConfig>
+              <GUIConfig name="AutoUpdate">{{ notepadplusplus_enable_auto_update | lower }}</GUIConfig>
+              <GUIConfig name="EnableSessionBackup">{{ notepadplusplus_enable_session_backup | lower }}</GUIConfig>
+              <GUIConfig name="SessionBackupInterval">{{ notepadplusplus_session_backup_interval }}</GUIConfig>
+            </GUIConfigs>
+          </NotepadPlus>
+        dest: "{{ ansible_env.APPDATA }}\\Notepad++\\session.xml"
+      ignore_errors: yes
+  
+  when: false  # Configuration will be done via GUI after first launch
+
+- name: "Log configuration completion"
+  win_shell: |
+    "Configuration completed at $(Get-Date)" | Add-Content -Path "{{ notepadplusplus_log_dir }}\notepadplusplus-install.log"
+  when: notepadplusplus_enable_logging | bool
+  ignore_errors: yes
+
+- name: "Display configuration summary"
+  debug:
+    msg:
+      - "====== Post-Installation Configuration ======"
+      - "Start Menu Shortcut Created: {{ notepadplusplus_create_shortcut }}"
+      - "Desktop Shortcut Created: {{ notepadplusplus_create_desktop_shortcut }}"
+      - "Added to PATH: {{ notepadplusplus_add_to_path }}"
+      - "File Associations Configured: {{ notepadplusplus_configure_file_associations }}"
+      - "Font: {{ notepadplusplus_font_name }} ({{ notepadplusplus_font_size }}pt)"
+      - "Auto-Update Enabled: {{ notepadplusplus_enable_auto_update }}"
+      - "Session Backup Enabled: {{ notepadplusplus_enable_session_backup }}"
+      - "============================================\n"

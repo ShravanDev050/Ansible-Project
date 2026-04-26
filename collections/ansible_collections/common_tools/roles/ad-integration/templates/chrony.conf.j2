@@ -1,0 +1,50 @@
+# This file is managed by Ansible
+# Chrony configuration for AD integration
+# Generated: {{ ansible_date_time.iso8601 }}
+
+# Use AD server as NTP server if available
+{% if ad_ad_server %}
+server {{ ad_ad_server }} iburst
+{% endif %}
+
+# Use public NTP servers as fallback
+{% for ntp_server in ad_ntp_servers %}
+pool {{ ntp_server }} iburst
+{% endfor %}
+
+# Allow NTP client access from localhost
+allow 127.0.0.1
+allow ::1
+
+# Record the rate at which the system clock is gaining/losing time.
+driftfile /var/lib/chrony/chrony.drift
+
+# In first three updates step the system clock instead of slew
+# if the adjustment is larger than 1 second.
+makestep 1 3
+
+# Bind chrony to any interface
+bindcmdaddress 127.0.0.1
+bindcmdaddress ::1
+
+# Increase the minimum number of selectable sources required to adjust
+# the system clock
+minsources 2
+
+# Specify file containing keys for NTP authentication.
+keyfile /etc/chrony.keys
+
+# Specify directory for log files.
+logdir /var/log/chrony
+
+# Select which information is logged into measure.log file.
+log measurements statistics tracking
+
+# For AD integration, we want stratum 8 minimum
+minstratum 8
+
+# Enable real-time clock (RTC) synchronization
+rtcsync
+
+# Allow stepping the system clock even after we've started settling
+nocorrect

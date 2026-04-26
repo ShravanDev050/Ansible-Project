@@ -1,0 +1,100 @@
+---
+# Example: Deploy Samba Active Directory Domain Controller on Linux
+# This playbook demonstrates installing Samba AD on Ubuntu/Debian
+
+- name: Deploy Samba AD DC on Linux
+  hosts: ad_servers_linux
+  become: yes
+  gather_facts: yes
+  collections:
+    - common_tools.infrastructure
+  
+  vars_files:
+    - vars/vault.yml
+  
+  vars:
+    # AD Configuration
+    ad_domain_name: "corp.example.com"
+    ad_domain_netbios_name: "CORP"
+    ad_admin_password: "{{ vault_ad_admin_password }}"
+    
+    # Samba Specific
+    ad_samba_realm: "{{ ad_domain_name | upper }}"
+    ad_samba_workgroup: "{{ ad_domain_netbios_name }}"
+    
+    # DNS Configuration
+    ad_install_dns: true
+    ad_dns_forwarder_ips:
+      - "8.8.8.8"
+      - "8.8.4.4"
+    
+    # NTP Configuration
+    ad_configure_ntp: true
+    ad_ntp_servers:
+      - "0.pool.ntp.org"
+      - "1.pool.ntp.org"
+    
+    # Kerberos Configuration
+    ad_configure_kerberos: true
+    ad_kerberos_realm: "{{ ad_domain_name | upper }}"
+    
+    # Firewall Configuration
+    ad_configure_firewall: true
+    ad_firewall_ports:
+      - 53      # DNS
+      - 88      # Kerberos
+      - 135     # RPC
+      - 139     # SMB
+      - 389     # LDAP
+      - 445     # SMB
+      - 464     # Kerberos Password Change
+      - 636     # LDAPS
+      - 3268    # Global Catalog
+      - 3389    # RDP
+    
+    # SELinux Configuration
+    ad_configure_selinux: true
+    
+    # Audit Logging
+    ad_enable_audit_logging: true
+    
+    # Backup Configuration
+    ad_enable_backup: true
+    ad_backup_path: "/var/backups/samba"
+  
+  pre_tasks:
+    - name: Display deployment summary
+      debug:
+        msg:
+          - "Samba AD DC Deployment Summary"
+          - "Domain: {{ ad_domain_name }}"
+          - "Realm: {{ ad_kerberos_realm }}"
+          - "Server: {{ inventory_hostname }}"
+  
+  roles:
+    - ad
+  
+  post_tasks:
+    - name: Verify Samba services
+      systemd:
+        name: "{{ item }}"
+        state: started
+        enabled: yes
+      loop:
+        - samba
+        - winbind
+      ignore_errors: yes
+    
+    - name: Test AD functionality
+      shell: |
+        kinit -k
+        ldapwhoami -H ldap://localhost
+      environment:
+        KRB5_CONFIG: /etc/krb5.conf
+      ignore_errors: yes
+      register: ad_test_result
+    
+    - name: Display AD test results
+      debug:
+        msg: "{{ ad_test_result.stdout }}"
+      when: ad_test_result.rc == 0

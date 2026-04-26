@@ -1,0 +1,94 @@
+---
+# Example: Join Windows Servers to Active Directory Domain
+# This playbook demonstrates joining Windows servers to an existing AD domain
+
+- name: Join Windows Servers to AD Domain
+  hosts: windows_servers
+  gather_facts: yes
+  collections:
+    - common_tools.infrastructure
+  
+  vars_files:
+    - vars/vault.yml
+  
+  vars:
+    # AD Domain Configuration
+    ad_domain: "corp.example.com"
+    ad_domain_netbios: "CORP"
+    
+    # AD Server Information
+    ad_ad_server: "dc1.corp.example.com"
+    ad_ad_server_ip: "192.168.1.10"
+    
+    # Domain Join Credentials
+    ad_username: "domain_joiner"
+    ad_password: "{{ vault_domain_joiner_password }}"
+    
+    # DNS Configuration
+    ad_configure_dns: true
+    ad_dns_servers:
+      - "192.168.1.10"  # Primary DC
+      - "192.168.1.11"  # Secondary DC
+    
+    # NTP Configuration
+    ad_configure_ntp: true
+    ad_ntp_servers:
+      - "192.168.1.10"  # Use DC as NTP server
+    
+    # Custom OU Placement (optional)
+    ad_target_ou: "OU=Servers,OU=Managed,DC=corp,DC=example,DC=com"
+    
+    # Firewall Configuration
+    ad_configure_firewall: true
+    ad_allow_ad_server: true
+    
+    # Group Policy
+    ad_enable_gpo: true
+    ad_force_gpo_update: true
+    
+    # Audit Logging
+    ad_enable_audit_logging: true
+    
+    # Backup Pre-Join Configuration
+    ad_backup_before_join: true
+    ad_backup_path: "C:\\Backups"
+  
+  pre_tasks:
+    - name: Validate AD server connectivity
+      wait_for:
+        host: "{{ ad_ad_server_ip }}"
+        port: 389
+        timeout: 30
+      register: ad_connectivity
+    
+    - name: Display domain join summary
+      debug:
+        msg:
+          - "Windows Domain Join Summary"
+          - "Server: {{ inventory_hostname }}"
+          - "Domain: {{ ad_domain }}"
+          - "AD Server: {{ ad_ad_server }}"
+          - "Target OU: {{ ad_target_ou | default('Default') }}"
+  
+  roles:
+    - ad-integration
+  
+  post_tasks:
+    - name: Verify domain membership
+      win_command: wmic computersystem get domain
+      register: domain_check
+    
+    - name: Display domain membership
+      debug:
+        msg: "Server is now a member of: {{ domain_check.stdout }}"
+    
+    - name: Restart computer to apply GPO
+      win_reboot:
+        msg: "Restarting to apply Group Policy"
+        pre_reboot_delay: 60
+      when: ad_force_gpo_update | default(false)
+    
+    - name: Verify GPO application
+      win_command: gpupdate /force
+      register: gpo_result
+      when: ad_force_gpo_update | default(false)

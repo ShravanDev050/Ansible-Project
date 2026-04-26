@@ -1,0 +1,20 @@
+# This file is managed by Ansible
+# DNS resolver configuration for AD integration
+# Generated: {{ ansible_date_time.iso8601 }}
+
+# Use AD servers as primary DNS servers
+{% for dns_server in ad_dns_servers %}
+{% if dns_server %}
+nameserver {{ dns_server }}
+{% endif %}
+{% endfor %}
+
+# Domain configuration
+domain {{ ad_domain }}
+search {{ ad_domain }}
+
+# Options for better AD integration
+options timeout:5 attempts:2 rotate single-request-reopen
+
+# Prevent dynamic update
+# This file is managed automatically by the system and should not be edited manually

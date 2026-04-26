@@ -1,0 +1,184 @@
+---
+# Installation tasks for Notepad++
+
+- name: "Uninstall existing installation if force_install is enabled"
+  block:
+    - name: "Uninstall via registry"
+      win_shell: |
+        $uninstallPaths = @(
+          "HKLM:\Software\Microsoft\Windows\CurrentVersion\Uninstall",
+          "HKLM:\Software\Wow6432Node\Microsoft\Windows\CurrentVersion\Uninstall",
+          "HKCU:\Software\Microsoft\Windows\CurrentVersion\Uninstall"
+        )
+        
+        foreach ($path in $uninstallPaths) {
+          $apps = Get-ItemProperty "$path\*" -ErrorAction SilentlyContinue | Where-Object { $_.DisplayName -like "*Notepad++*" }
+          foreach ($app in $apps) {
+            if ($app.UninstallString) {
+              Write-Output "Uninstalling: $($app.DisplayName)"
+              & cmd /c "$($app.UninstallString)" /S
+            }
+          }
+        }
+      ignore_errors: yes
+    
+    - name: "Remove installation directory"
+      win_file:
+        path: "{{ item }}"
+        state: absent
+      loop: "{{ notepadplusplus_common_install_paths }}"
+      ignore_errors: yes
+  
+  when:
+    - notepadplusplus_force_install | bool
+    - notepadplusplus_uninstall_before_install | bool
+
+- name: "Install Notepad++ using Chocolatey"
+  win_shell: |
+    choco install notepadplusplus -y {{ '--version=' + notepadplusplus_chocolatey_version if notepadplusplus_chocolatey_version else '' }}
+  register: chocolatey_install
+  when: notepadplusplus_install_method == 'chocolatey'
+  retries: "{{ notepadplusplus_download_retries }}"
+  delay: "{{ notepadplusplus_download_retry_delay }}"
+  until: chocolatey_install is succeeded
+
+- name: "Get Notepad++ version from GitHub API"
+  win_shell: |
+    try {
+      $response = Invoke-RestMethod -Uri "{{ notepadplusplus_github_api_url }}" -ErrorAction Stop
+      $latestVersion = $response.tag_name -replace '^v', ''
+      Write-Output $latestVersion
+    } catch {
+      Write-Error "Failed to get latest version from GitHub"
+      exit 1
+    }
+  register: github_version
+  changed_when: false
+  when:
+    - notepadplusplus_install_method in ['msi', 'portable', 'zip']
+    - notepadplusplus_version == 'latest'
+
+- name: "Set actual version to install"
+  set_fact:
+    notepadplusplus_install_version: "{{ github_version.stdout | trim }}"
+  when:
+    - notepadplusplus_version == 'latest'
+    - github_version.stdout is defined
+
+- name: "Set actual version if specified"
+  set_fact:
+    notepadplusplus_install_version: "{{ notepadplusplus_version }}"
+  when: notepadplusplus_version != 'latest'
+
+- name: "Download Notepad++ installer (MSI)"
+  win_shell: |
+    $url = "https://github.com/notepad-plus-plus/notepad-plus-plus/releases/download/v{{ notepadplusplus_install_version }}/npp.{{ notepadplusplus_install_version }}.Installer.x64.exe"
+    $outputPath = "{{ notepadplusplus_download_dir }}\npp.{{ notepadplusplus_install_version }}.exe"
+    
+    [System.Net.ServicePointManager]::SecurityProtocol = [System.Net.SecurityProtocolType]::Tls12
+    $ProgressPreference = 'SilentlyContinue'
+    
+    try {
+      Invoke-WebRequest -Uri $url -OutFile $outputPath -TimeoutSec {{ notepadplusplus_download_timeout }}
+      if (Test-Path $outputPath) {
+        Write-Output "Downloaded: $outputPath"
+      } else {
+        throw "Download failed"
+      }
+    } catch {
+      Write-Error "Download failed: $_"
+      exit 1
+    }
+  register: download_result
+  retries: "{{ notepadplusplus_download_retries }}"
+  delay: "{{ notepadplusplus_download_retry_delay }}"
+  until: download_result is succeeded
+  when:
+    - notepadplusplus_install_method in ['msi', 'portable', 'zip']
+
+- name: "Install Notepad++ from downloaded installer"
+  win_shell: |
+    $installerPath = "{{ notepadplusplus_download_dir }}\npp.{{ notepadplusplus_install_version }}.exe"
+    $installPath = "{{ notepadplusplus_install_path }}"
+    
+    if (Test-Path $installerPath) {
+      Write-Output "Installing from: $installerPath"
+      & $installerPath /S /D=$installPath
+      
+      # Wait for installation to complete
+      Start-Sleep -Seconds 5
+      
+      # Verify installation
+      $exePath = "$installPath\notepad++.exe"
+      if (Test-Path $exePath) {
+        Write-Output "Installation successful"
+      } else {
+        throw "Installation failed - executable not found"
+      }
+    } else {
+      throw "Installer not found: $installerPath"
+    }
+  register: installation_result
+  when: notepadplusplus_install_method == 'msi'
+
+- name: "Extract and configure Notepad++ from portable/zip"
+  win_shell: |
+    $zipPath = "{{ notepadplusplus_download_dir }}\notepad-plus-plus.zip"
+    $extractPath = "{{ notepadplusplus_install_path }}"
+    
+    if (Test-Path $extractPath) {
+      Remove-Item -Path $extractPath -Recurse -Force
+    }
+    
+    New-Item -ItemType Directory -Path $extractPath -Force | Out-Null
+    
+    if (Test-Path $zipPath) {
+      [System.IO.Compression.ZipFile]::ExtractToDirectory($zipPath, $extractPath)
+      Write-Output "Extraction complete"
+    } else {
+      throw "ZIP file not found"
+    }
+  when: notepadplusplus_install_method in ['portable', 'zip']
+
+- name: "Verify installation"
+  win_stat:
+    path: "{{ notepadplusplus_install_path }}\\notepad++.exe"
+  register: notepadplusplus_exe_check
+
+- name: "Assert installation successful"
+  assert:
+    that:
+      - notepadplusplus_exe_check.stat.exists
+    fail_msg: "Notepad++ installation failed - executable not found"
+
+- name: "Set installation variables"
+  set_fact:
+    notepadplusplus_exe_path: "{{ notepadplusplus_install_path }}\\notepad++.exe"
+    notepadplusplus_installation_successful: true
+    notepadplusplus_installation_version_installed: "{{ notepadplusplus_install_version }}"
+    notepadplusplus_installation_path_used: "{{ notepadplusplus_install_path }}"
+
+- name: "Log installation success"
+  win_shell: |
+    "Installation completed successfully at $(Get-Date) - Version: {{ notepadplusplus_install_version }}" | Add-Content -Path "{{ notepadplusplus_log_dir }}\notepadplusplus-install.log"
+  when: notepadplusplus_enable_logging | bool
+  ignore_errors: yes
+
+- name: "Cleanup downloaded files"
+  win_file:
+    path: "{{ notepadplusplus_download_dir }}\\{{ item }}"
+    state: absent
+  loop:
+    - "npp.{{ notepadplusplus_install_version }}.exe"
+    - "npp.*.Installer.x64.exe"
+  ignore_errors: yes
+  when: notepadplusplus_install_method in ['msi', 'portable', 'zip']
+
+- name: "Display installation success"
+  debug:
+    msg:
+      - "====== Notepad++ Installation Successful ======"
+      - "Version: {{ notepadplusplus_install_version }}"
+      - "Installation Path: {{ notepadplusplus_exe_path }}"
+      - "Installation Method: {{ notepadplusplus_install_method }}"
+      - "============================================\n"

@@ -1,0 +1,163 @@
+---
+# Example: Join Linux Servers to Active Directory Domain
+# This playbook demonstrates joining Linux servers to an existing AD domain using SSSD
+
+- name: Join Linux Servers to AD Domain
+  hosts: linux_servers
+  become: yes
+  gather_facts: yes
+  collections:
+    - common_tools.infrastructure
+  
+  vars_files:
+    - vars/vault.yml
+  
+  vars:
+    # AD Domain Configuration
+    ad_domain: "corp.example.com"
+    ad_domain_netbios: "CORP"
+    
+    # AD Server Information
+    ad_ad_server: "dc1.corp.example.com"
+    ad_ad_server_ip: "192.168.1.10"
+    
+    # Domain Join Credentials
+    ad_username: "ansible_joiner"
+    ad_password: "{{ vault_ansible_password }}"
+    
+    # SSSD vs Winbind Selection
+    # Use 'sssd' or 'winbind' (SSSD is recommended)
+    ad_linux_ad_backend: "sssd"
+    
+    # DNS Configuration
+    ad_configure_dns: true
+    ad_dns_servers:
+      - "192.168.1.10"  # Primary DC
+      - "192.168.1.11"  # Secondary DC
+    
+    # NTP Configuration
+    ad_configure_ntp: true
+    ad_ntp_servers:
+      - "192.168.1.10"
+    
+    # Kerberos Configuration
+    ad_configure_kerberos: true
+    ad_kerberos_realm: "{{ ad_domain | upper }}"
+    
+    # SSH Access from AD
+    ad_configure_ssh: true
+    ad_ssh_authentication_order:
+      - publickey
+      - gssapi-with-mic
+      - password
+    
+    # Home Directory Setup
+    ad_create_home_dirs: true
+    ad_home_dir_mount_point: "/home"
+    ad_home_dir_umask: "0077"
+    
+    # Sudo Access Configuration
+    ad_configure_sudoers: true
+    ad_local_admin_groups:
+      - "Unix Admins"
+    ad_sudo_groups:
+      - "Unix Admins"
+      - "Linux Administrators"
+    
+    # SELinux Configuration
+    ad_configure_selinux: true
+    ad_selinux_mode: "enforcing"
+    
+    # Firewall Configuration
+    ad_configure_firewall: true
+    ad_firewall_rules:
+      - proto: tcp
+        port: 389
+        comment: "LDAP"
+      - proto: tcp
+        port: 636
+        comment: "LDAPS"
+      - proto: tcp
+        port: 88
+        comment: "Kerberos"
+    
+    # Audit Logging
+    ad_enable_audit_logging: true
+    
+    # Backup Pre-Join Configuration
+    ad_backup_before_join: true
+    ad_backup_path: "/var/backups/ad-integration"
+  
+  pre_tasks:
+    - name: Validate AD server connectivity
+      wait_for:
+        host: "{{ ad_ad_server_ip }}"
+        port: 389
+        timeout: 30
+    
+    - name: Display domain join summary
+      debug:
+        msg:
+          - "Linux Domain Join Summary"
+          - "Server: {{ inventory_hostname }}"
+          - "Domain: {{ ad_domain }}"
+          - "AD Server: {{ ad_ad_server }}"
+          - "Backend: {{ ad_linux_ad_backend }}"
+          - "Configure SSH: {{ ad_configure_ssh }}"
+          - "Configure Sudo: {{ ad_configure_sudoers }}"
+  
+  roles:
+    - ad-integration
+  
+  post_tasks:
+    - name: Verify domain join status
+      shell: |
+        id domain_user@{{ ad_domain }}
+      register: domain_user_check
+      ignore_errors: yes
+      changed_when: false
+    
+    - name: Display AD user lookup result
+      debug:
+        msg: "AD user lookup successful"
+      when: domain_user_check.rc == 0
+    
+    - name: Test SSH AD authentication
+      shell: |
+        getent passwd "domain_user@{{ ad_domain }}"
+      register: ssh_auth_check
+      ignore_errors: yes
+      changed_when: false
+    
+    - name: Verify Kerberos authentication
+      shell: |
+        kinit -k
+      environment:
+        KRB5_CONFIG: /etc/krb5.conf
+      register: krb_check
+      ignore_errors: yes
+      changed_when: false
+    
+    - name: Display Kerberos status
+      debug:
+        msg: "Kerberos authentication successful"
+      when: krb_check.rc == 0
+    
+    - name: Verify SSSD service
+      systemd:
+        name: sssd
+        state: started
+        enabled: yes
+      when: ad_linux_ad_backend == 'sssd'
+    
+    - name: Clear SSSD cache to refresh user list
+      command: sss_cache -E
+      when: ad_linux_ad_backend == 'sssd'
+    
+    - name: Display final status
+      debug:
+        msg:
+          - "Domain join completed successfully"
+          - "Server is now integrated with {{ ad_domain }}"
+          - "Users can now login with domain credentials"
+          - "Sudo access configured for AD groups"

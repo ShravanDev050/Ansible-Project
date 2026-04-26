@@ -1,0 +1,102 @@
+---
+# Example: Install Notepad++ via Direct MSI Download
+# Install a specific version by downloading the MSI installer
+
+- name: Install Notepad++ via Direct MSI Download
+  hosts: windows_servers
+  gather_facts: yes
+  collections:
+    - common_tools.infrastructure
+  
+  vars:
+    # Installation method - direct MSI download
+    notepadplusplus_install_method: "msi"
+    
+    # Specific version to install
+    notepadplusplus_version: "8.5.1"
+    
+    # Installation path
+    notepadplusplus_install_path: "C:\\Program Files\\Notepad++"
+    
+    # Shortcuts and configuration
+    notepadplusplus_create_shortcut: true
+    notepadplusplus_create_desktop_shortcut: true
+    notepadplusplus_add_to_path: false
+    
+    # File associations for common text file types
+    notepadplusplus_configure_file_associations: true
+    notepadplusplus_file_associations:
+      - ".txt"
+      - ".log"
+      - ".conf"
+      - ".conf.d"
+      - ".yml"
+      - ".yaml"
+      - ".json"
+      - ".xml"
+      - ".ini"
+      - ".sh"
+      - ".bat"
+      - ".ps1"
+    
+    # Configuration
+    notepadplusplus_font_name: "Consolas"
+    notepadplusplus_font_size: 11
+    notepadplusplus_enable_auto_update: true
+    
+    # Download configuration
+    notepadplusplus_download_dir: "C:\\Windows\\Temp"
+    notepadplusplus_download_retries: 3
+    notepadplusplus_download_timeout: 300
+    
+    # Backup and logging
+    notepadplusplus_backup_config: true
+    notepadplusplus_enable_logging: true
+    notepadplusplus_log_dir: "C:\\Logs\\Notepad++"
+  
+  pre_tasks:
+    - name: Display installation plan
+      debug:
+        msg:
+          - "================================================"
+          - "Notepad++ Installation Plan"
+          - "================================================"
+          - "Server: {{ inventory_hostname }}"
+          - "Installation Method: {{ notepadplusplus_install_method }}"
+          - "Version: {{ notepadplusplus_version }}"
+          - "Install Path: {{ notepadplusplus_install_path }}"
+          - "Create Start Menu: {{ notepadplusplus_create_shortcut }}"
+          - "Create Desktop: {{ notepadplusplus_create_desktop_shortcut }}"
+          - "File Associations: {{ notepadplusplus_configure_file_associations }}"
+          - "Auto-Update: {{ notepadplusplus_enable_auto_update }}"
+          - "Backup Config: {{ notepadplusplus_backup_config }}"
+          - "================================================"
+  
+  roles:
+    - notepadplusplus
+  
+  post_tasks:
+    - name: Wait for installation to stabilize
+      wait_for:
+        timeout: 10
+    
+    - name: Verify installation success
+      win_stat:
+        path: "C:\\Program Files\\Notepad++\\notepad++.exe"
+      register: exe_check
+    
+    - name: Display final status
+      debug:
+        msg:
+          - "================================================"
+          - "Installation Status: {{ 'SUCCESS' if exe_check.stat.exists else 'FAILED' }}"
+          - "Executable Found: {{ exe_check.stat.exists }}"
+          - "Installation Path: C:\\Program Files\\Notepad++"
+          - "Log File: {{ notepadplusplus_log_dir }}/notepadplusplus-install.log"
+          - "Backup Path: {{ notepadplusplus_log_dir }}"
+          - "================================================"
+          - ""
+          - "Next Steps:"
+          - "1. Users can launch Notepad++ from Start Menu"
+          - "2. Text files will open with Notepad++ by default"
+          - "3. Check logs for detailed installation information"

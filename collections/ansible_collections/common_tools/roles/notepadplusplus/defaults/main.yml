@@ -1,0 +1,131 @@
+---
+# Default variables for Notepad++ installation role
+
+# Installation method: 'chocolatey', 'msi', 'portable', or 'zip'
+# - chocolatey: Install via Chocolatey package manager (requires Chocolatey installed)
+# - msi: Download and install MSI package
+# - portable: Download and extract portable version
+# - zip: Download and extract ZIP archive
+notepadplusplus_install_method: "chocolatey"
+
+# Notepad++ version to install
+# Use 'latest' for the most recent version
+# Or specify exact version like '8.4.6', '8.5.1', etc.
+notepadplusplus_version: "latest"
+
+# Installation directory for portable/zip versions
+# Windows typically uses C:\Program Files or C:\Program Files (x86)
+notepadplusplus_install_path: "C:\\Program Files\\Notepad++"
+
+# Download URL (used for MSI and portable installations)
+notepadplusplus_download_url: "https://github.com/notepad-plus-plus/notepad-plus-plus/releases/download/v{{ notepadplusplus_version }}/npp.{{ notepadplusplus_version }}.Installer.x64.exe"
+
+# Download directory for installers
+notepadplusplus_download_dir: "C:\\Windows\\Temp"
+
+# Create Start Menu shortcut
+notepadplusplus_create_shortcut: true
+
+# Add to Start Menu
+notepadplusplus_add_to_startmenu: true
+
+# Add to PATH environment variable
+notepadplusplus_add_to_path: false
+
+# Create desktop shortcut
+notepadplusplus_create_desktop_shortcut: false
+
+# Configure file associations (associate common file types with Notepad++)
+notepadplusplus_configure_file_associations: false
+
+# File extensions to associate with Notepad++ (if configure_file_associations is true)
+notepadplusplus_file_associations:
+  - ".txt"
+  - ".log"
+  - ".conf"
+  - ".config"
+  - ".yml"
+  - ".yaml"
+  - ".json"
+  - ".xml"
+  - ".ini"
+
+# Enable auto-update checking
+notepadplusplus_enable_auto_update: true
+
+# Enable backup functionality
+notepadplusplus_enable_backup: true
+
+# Backup directory
+notepadplusplus_backup_dir: "C:\\Users\\{{ ansible_user_id }}\\AppData\\Roaming\\Notepad++\\backup"
+
+# Enable session backup
+notepadplusplus_enable_session_backup: true
+
+# Session backup frequency (in seconds)
+notepadplusplus_session_backup_interval: 600
+
+# Theme/styling
+# Options: 'default', 'dark', 'light', or custom theme name
+notepadplusplus_theme: "default"
+
+# Font configuration
+notepadplusplus_font_name: "Consolas"
+notepadplusplus_font_size: 10
+
+# Enable plugins
+notepadplusplus_enable_plugins: true
+
+# Default plugins to install/enable
+# Examples: "NppExec", "Compare", "JSON Viewer", etc.
+notepadplusplus_default_plugins: []
+
+# Enable extensions folder
+notepadplusplus_enable_extensions: true
+
+# Create configuration backup before installation
+notepadplusplus_backup_config: true
+
+# Configuration backup directory
+notepadplusplus_config_backup_dir: "C:\\Backups\\Notepad++"
+
+# Force installation even if already installed
+notepadplusplus_force_install: false
+
+# Uninstall existing version before installing new one
+notepadplusplus_uninstall_before_install: false
+
+# Enable installation logging
+notepadplusplus_enable_logging: true
+
+# Log directory
+notepadplusplus_log_dir: "C:\\Logs\\Notepad++"
+
+# Verify installation after completing
+notepadplusplus_verify_installation: true
+
+# Set installation as default text editor
+notepadplusplus_set_as_default_editor: false
+
+# Users to install Notepad++ for (if using per-user installation)
+# Use 'all' for all users, or specify specific usernames
+notepadplusplus_target_users: "all"
+
+# Retry configuration
+notepadplusplus_download_retries: 3
+notepadplusplus_download_retry_delay: 5
+
+# Timeout for download operations (seconds)
+notepadplusplus_download_timeout: 300
+
+# Check for prerequisites before installation
+notepadplusplus_check_prerequisites: true
+
+# Minimum Windows version
+notepadplusplus_min_windows_version: "6.1"  # Windows 7 and above
+
+# Required disk space (MB)
+notepadplusplus_required_disk_space: 50
+
+# Chocolatey version (if using Chocolatey)
+notepadplusplus_chocolatey_version: ""  # Empty = latest

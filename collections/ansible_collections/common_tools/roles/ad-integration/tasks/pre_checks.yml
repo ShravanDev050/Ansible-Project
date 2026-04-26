@@ -1,0 +1,216 @@
+#SPDX-License-Identifier: MIT-0
+---
+# tasks file for pre-integration checks
+
+- name: "Pre-checks - Validate required parameters"
+  assert:
+    that:
+      - ad_domain is defined and ad_domain | length > 0
+      - ad_ad_server is defined and ad_ad_server | length > 0
+      - ad_username is defined and ad_username | length > 0
+      - ad_password is defined and ad_password | length > 0
+    fail_msg: "Required parameters missing: ad_domain, ad_ad_server, ad_username, ad_password"
+    success_msg: "Required parameters validation passed"
+
+- name: "Pre-checks - Validate domain name format"
+  assert:
+    that:
+      - ad_domain is regex(ad_domain_pattern)
+    fail_msg: "Invalid domain name format: {{ ad_domain }}"
+    success_msg: "Domain name validation passed: {{ ad_domain }}"
+
+- name: "Pre-checks - Validate username format"
+  assert:
+    that:
+      - ad_username is regex(ad_username_pattern)
+    fail_msg: "Invalid username format: {{ ad_username }}"
+    success_msg: "Username validation passed"
+
+- name: "Pre-checks - Validate AD server is reachable"
+  wait_for:
+    host: "{{ ad_ad_server }}"
+    port: 389
+    timeout: "{{ ad_ldap_port_timeout }}"
+    state: "started"
+  ignore_errors: true
+  changed_when: false
+
+- name: "Pre-checks - DNS resolution of AD domain"
+  command: "nslookup {{ ad_domain }}"
+  register: dns_result
+  ignore_errors: true
+  changed_when: false
+  when: ad_is_linux | bool
+
+- name: "Pre-checks - Verify DNS resolution (Windows)"
+  win_command: "nslookup {{ ad_domain }}"
+  register: dns_result_win
+  ignore_errors: true
+  changed_when: false
+  when: ad_is_windows | bool
+
+- name: "Pre-checks - OS-specific validation"
+  block:
+    - name: "Pre-checks - Validate Windows environment"
+      assert:
+        that:
+          - ansible_os_family == "Windows"
+        fail_msg: "This is not a Windows system"
+        success_msg: "Windows environment validation passed"
+      when: ad_is_windows | bool
+
+    - name: "Pre-checks - Validate Linux environment"
+      assert:
+        that:
+          - ansible_os_family in ["RedHat", "Debian", "Suse"]
+        fail_msg: "Unsupported Linux distribution: {{ ansible_os_family }}"
+        success_msg: "Linux environment validation passed"
+      when: ad_is_linux | bool
+
+  rescue:
+    - name: "Pre-checks - Display OS validation error"
+      debug:
+        msg: "OS validation failed: {{ ansible_failed_result.msg }}"
+      failed_when: true
+
+- name: "Pre-checks - Verify hostname is valid"
+  assert:
+    that:
+      - ansible_hostname is defined and ansible_hostname | length > 0
+      - ansible_hostname | length <= 63
+    fail_msg: "Invalid hostname: {{ ansible_hostname }}"
+    success_msg: "Hostname validation passed: {{ ansible_hostname }}"
+
+- name: "Pre-checks - Check network connectivity"
+  block:
+    - name: "Pre-checks - Ping AD server"
+      command: "ping -c 1 {{ ad_ad_server }}"
+      register: ping_result
+      ignore_errors: true
+      changed_when: false
+      when: ad_is_linux | bool
+
+    - name: "Pre-checks - Test AD server connectivity (Windows)"
+      win_ping:
+      register: ping_result_win
+      ignore_errors: true
+      when: ad_is_windows | bool
+
+  rescue:
+    - name: "Pre-checks - Display connectivity warning"
+      debug:
+        msg: "WARNING: Unable to reach AD server {{ ad_ad_server }}. Connectivity check failed."
+
+- name: "Pre-checks - Validate LDAP connectivity"
+  block:
+    - name: "Pre-checks - Test LDAP connection"
+      wait_for:
+        host: "{{ ad_ad_server }}"
+        port: 389
+        timeout: "{{ ad_ldap_port_timeout }}"
+      when: ad_perform_ldap_checks | bool
+
+    - name: "Pre-checks - Test LDAPS connection"
+      wait_for:
+        host: "{{ ad_ad_server }}"
+        port: 636
+        timeout: "{{ ad_ldap_port_timeout }}"
+      when: 
+        - ad_perform_ldap_checks | bool
+        - ad_use_ldaps | bool
+
+  rescue:
+    - name: "Pre-checks - Display LDAP connectivity error"
+      debug:
+        msg: "WARNING: LDAP connectivity check failed. Domain join may fail."
+
+- name: "Pre-checks - Check required ports (Linux)"
+  wait_for:
+    port: "{{ item.port }}"
+    state: "started"
+    timeout: 2
+  ignore_errors: true
+  changed_when: false
+  loop: "{{ ad_required_ports }}"
+  when: 
+    - ad_is_linux | bool
+    - ad_perform_network_checks | bool
+
+- name: "Pre-checks - Verify current domain status (Windows)"
+  win_powershell:
+    script: |
+      $domain = (Get-WmiObject Win32_ComputerSystem).Domain
+      Write-Host "Current Domain: $domain"
+  register: current_domain_win
+  ignore_errors: true
+  changed_when: false
+  when: ad_is_windows | bool
+
+- name: "Pre-checks - Verify current domain status (Linux)"
+  command: "realm list"
+  register: current_domain_linux
+  ignore_errors: true
+  changed_when: false
+  when: ad_is_linux | bool
+
+- name: "Pre-checks - Check if already joined to target domain"
+  block:
+    - name: "Pre-checks - Windows domain check"
+      assert:
+        that:
+          - "'{{ ad_domain }}' not in current_domain_win.stdout"
+        fail_msg: "System is already joined to {{ ad_domain }}"
+        success_msg: "System is not yet joined to {{ ad_domain }}"
+      when: ad_is_windows | bool
+      ignore_errors: true
+
+    - name: "Pre-checks - Linux domain check"
+      assert:
+        that:
+          - "'{{ ad_domain }}' not in current_domain_linux.stdout"
+        fail_msg: "System is already joined to {{ ad_domain }}"
+        success_msg: "System is not yet joined to {{ ad_domain }}"
+      when: ad_is_linux | bool
+      ignore_errors: true
+
+  rescue:
+    - name: "Pre-checks - Display domain status"
+      debug:
+        msg: "Domain join check completed. System may already be joined."
+
+- name: "Pre-checks - Verify AD credentials are valid"
+  block:
+    - name: "Pre-checks - Test AD credentials (Windows)"
+      win_powershell:
+        script: |
+          $cred = New-Object System.Management.Automation.PSCredential("{{ ad_windows_username_domain_format }}", (ConvertTo-SecureString "{{ ad_password }}" -AsPlainText -Force))
+          try {
+            [System.Reflection.Assembly]::LoadWithPartialName("System.DirectoryServices.AccountManagement") | Out-Null
+            $ctx = New-Object System.DirectoryServices.AccountManagement.PrincipalContext([System.DirectoryServices.AccountManagement.ContextType]::Domain, "{{ ad_ad_server }}", $cred.UserName, $cred.GetNetworkCredential().Password)
+            $ctx.ValidateCredentials($cred.UserName, $cred.GetNetworkCredential().Password)
+            Write-Host "Credentials valid"
+          } catch {
+            Write-Error "Invalid credentials: $_"
+          }
+      register: cred_check_win
+      ignore_errors: true
+      when: ad_is_windows | bool
+
+  rescue:
+    - name: "Pre-checks - Display credential validation warning"
+      debug:
+        msg: "WARNING: Could not validate AD credentials. Domain join may fail."
+
+- name: "Pre-checks - Display summary"
+  debug:
+    msg: |
+      Pre-integration Checks Summary:
+      ==============================
+      Domain: {{ ad_domain }}
+      AD Server: {{ ad_ad_server }}
+      OS: {{ ansible_os_family }}
+      Hostname: {{ ansible_hostname }}
+      Current Domain: {{ current_domain_win.stdout | default(current_domain_linux.stdout, true) }}
+      DNS Forwarders Configured: {{ ad_dns_servers | length }}
+      
+      Pre-checks completed! Proceeding with integration...

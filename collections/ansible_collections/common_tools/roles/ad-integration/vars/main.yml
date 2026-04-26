@@ -1,0 +1,178 @@
+#SPDX-License-Identifier: MIT-0
+---
+# vars file for ad-integration - checks and validation variables
+
+# OS Detection
+ad_is_windows: "{{ ansible_os_family == 'Windows' }}"
+ad_is_linux: "{{ ansible_os_family == 'RedHat' or ansible_os_family == 'Debian' or ansible_os_family == 'Suse' }}"
+ad_is_ubuntu: "{{ ansible_distribution == 'Ubuntu' }}"
+ad_is_centos: "{{ ansible_distribution == 'CentOS' }}"
+ad_is_rhel: "{{ ansible_distribution == 'RedHat' }}"
+ad_is_debian: "{{ ansible_distribution == 'Debian' }}"
+
+# Pre-check variables
+ad_dns_check_timeout: 5
+ad_connectivity_check_timeout: 10
+ad_ldap_port_timeout: 5
+
+# Windows Specific Checks
+ad_windows_minimum_version: "7"  # Windows 7 and above
+ad_windows_required_features:
+  - "ADLDS"
+  - "GroupPolicy"
+
+# Linux Specific Checks - SSSD
+ad_sssd_required_packages_ubuntu:
+  - "sssd"
+  - "sssd-tools"
+  - "libpam-sss"
+  - "libnss-sss"
+  - "realmd"
+  - "krb5-user"
+  - "krb5-config"
+  - "adcli"
+
+ad_sssd_required_packages_centos:
+  - "sssd"
+  - "sssd-tools"
+  - "pam_krb5"
+  - "krb5-workstation"
+  - "realmd"
+  - "adcli"
+
+# Linux Specific Checks - Winbind
+ad_winbind_required_packages_ubuntu:
+  - "samba"
+  - "samba-common"
+  - "samba-common-bin"
+  - "winbind"
+  - "krb5-user"
+  - "krb5-config"
+
+ad_winbind_required_packages_centos:
+  - "samba"
+  - "samba-client"
+  - "samba-common"
+  - "samba-winbind"
+  - "krb5-workstation"
+
+# Port checks for AD connectivity
+ad_required_ports:
+  - port: 53
+    protocol: "udp"
+    name: "DNS"
+  - port: 53
+    protocol: "tcp"
+    name: "DNS"
+  - port: 88
+    protocol: "tcp"
+    name: "Kerberos"
+  - port: 88
+    protocol: "udp"
+    name: "Kerberos"
+  - port: 123
+    protocol: "udp"
+    name: "NTP"
+  - port: 135
+    protocol: "tcp"
+    name: "RPC"
+  - port: 139
+    protocol: "tcp"
+    name: "NetBIOS"
+  - port: 389
+    protocol: "tcp"
+    name: "LDAP"
+  - port: 389
+    protocol: "udp"
+    name: "LDAP"
+  - port: 445
+    protocol: "tcp"
+    name: "SMB"
+  - port: 636
+    protocol: "tcp"
+    name: "LDAPS"
+  - port: 3268
+    protocol: "tcp"
+    name: "GC"
+  - port: 3269
+    protocol: "tcp"
+    name: "GC SSL"
+
+# Credential validation
+ad_username_pattern: '^[a-zA-Z0-9._@-]+$'
+ad_domain_pattern: '^[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?(\.[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?)*$'
+ad_netbios_pattern: '^[A-Z0-9][A-Z0-9-]{0,13}[A-Z0-9]$'
+
+# Service checks for Linux
+ad_critical_services_linux_sssd:
+  - "sssd"
+  - "slapd"
+
+ad_critical_services_linux_winbind:
+  - "smbd"
+  - "nmbd"
+  - "winbind"
+
+# Configuration file locations - Windows
+ad_windows_sysprep_answer_file: "C:\\Windows\\System32\\sysprep\\unattend.xml"
+ad_windows_group_policy_folder: "C:\\Windows\\System32\\GroupPolicy"
+
+# Configuration file locations - Linux
+ad_sssd_config_file: "/etc/sssd/sssd.conf"
+ad_samba_config_file: "/etc/samba/smb.conf"
+ad_kerberos_config_file: "/etc/krb5.conf"
+ad_pam_password_file: "/etc/pam.d/common-password"
+ad_pam_session_file: "/etc/pam.d/common-session"
+ad_pam_auth_file: "/etc/pam.d/common-auth"
+ad_nsswitch_file: "/etc/nsswitch.conf"
+ad_sudoers_file: "/etc/sudoers.d/ad-integration"
+ad_ssh_config_file: "/etc/ssh/sshd_config"
+
+# LDAP search base auto-generation
+ad_ldap_search_base: "{{ ad_domain.split('.') | map('regex_replace', '^(.*)$', 'dc=\\1') | join(',') }}"
+
+# Check flags
+ad_perform_pre_checks: true
+ad_perform_network_checks: true
+ad_perform_domain_checks: true
+ad_perform_package_checks: true
+ad_perform_credential_checks: true
+ad_perform_ldap_checks: true
+ad_perform_kerberos_checks: false  # Set to true after integration
+ad_perform_integration_checks: false  # Set to true after integration
+
+# Retry configuration
+ad_check_retry_count: 3
+ad_check_retry_delay: 5  # seconds
+ad_domain_join_retry_count: 3
+ad_domain_join_retry_delay: 10  # seconds
+
+# Validation strings for checks
+ad_successful_ldap_bind: "authenticated"
+ad_successful_domain_lookup: "found"
+ad_successful_kerberos_init: "authenticated to Kerberos v5"
+
+# Backup variables
+ad_config_backup_timestamp: "{{ ansible_date_time.iso8601_basic_short }}"
+ad_backup_files:
+  - "/etc/sssd/sssd.conf"
+  - "/etc/samba/smb.conf"
+  - "/etc/krb5.conf"
+  - "/etc/pam.d/common-auth"
+  - "/etc/pam.d/common-session"
+  - "/etc/nsswitch.conf"
+  - "/etc/hostname"
+  - "/etc/hosts"
+  - "/root/.ssh/known_hosts"
+
+# Test user/group queries (use valid test accounts)
+ad_test_user_query: "root"  # Local test user
+ad_test_group_query: "wheel"  # Common group
+ad_ad_test_user: ""  # Set to AD test user
+ad_ad_test_group: "domain users"  # Set to AD test group
+
+# Error handling and recovery
+ad_stop_on_first_failure: false
+ad_continue_on_package_error: true
+ad_force_integration: false
+ad_cleanup_on_failure: true

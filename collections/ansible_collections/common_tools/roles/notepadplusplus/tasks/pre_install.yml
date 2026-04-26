@@ -1,0 +1,53 @@
+---
+# Pre-installation backup tasks for Notepad++
+
+- name: "Create backup directory"
+  win_file:
+    path: "{{ notepadplusplus_config_backup_dir }}"
+    state: directory
+
+- name: "Get current timestamp"
+  set_fact:
+    backup_timestamp: "{{ ansible_date_time.iso8601_basic_short }}"
+
+- name: "Check if Notepad++ config exists"
+  win_stat:
+    path: "{{ ansible_env.APPDATA }}\\Notepad++"
+  register: notepadplusplus_config_stat
+
+- name: "Backup existing Notepad++ configuration"
+  block:
+    - name: "Compress configuration directory"
+      win_shell: |
+        $source = "{{ ansible_env.APPDATA }}\Notepad++"
+        $destination = "{{ notepadplusplus_config_backup_dir }}\notepadplusplus-config-backup-{{ backup_timestamp }}.zip"
+        
+        if (Test-Path $source) {
+          [System.IO.Compression.ZipFile]::CreateFromDirectory($source, $destination)
+          Write-Output "Backup created at: $destination"
+        } else {
+          Write-Output "Configuration directory not found"
+        }
+      register: backup_result
+    
+    - name: "Verify backup file"
+      win_stat:
+        path: "{{ notepadplusplus_config_backup_dir }}\\notepadplusplus-config-backup-{{ backup_timestamp }}.zip"
+      register: backup_file_stat
+    
+    - name: "Log backup creation"
+      win_shell: |
+        "Backup created: {{ notepadplusplus_config_backup_dir }}\notepadplusplus-config-backup-{{ backup_timestamp }}.zip" | Add-Content -Path "{{ notepadplusplus_log_dir }}\notepadplusplus-install.log"
+      when: notepadplusplus_enable_logging | bool
+      ignore_errors: yes
+  
+  when: notepadplusplus_config_stat.stat.exists
+
+- name: "Display backup summary"
+  debug:
+    msg:
+      - "====== Pre-Installation Backup ======"
+      - "Backup Directory: {{ notepadplusplus_config_backup_dir }}"
+      - "Config Found: {{ notepadplusplus_config_stat.stat.exists }}"
+      - "Backup Created: {{ backup_file_stat.stat.exists | default(False) }}"
+      - "====================================\n"

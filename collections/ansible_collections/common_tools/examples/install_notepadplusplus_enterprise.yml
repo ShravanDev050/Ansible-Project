@@ -1,0 +1,166 @@
+---
+# Example: Enterprise Notepad++ Deployment
+# Deploy Notepad++ across multiple Windows servers with consistent configuration
+
+- name: Enterprise Notepad++ Deployment
+  hosts: all_windows_servers
+  gather_facts: yes
+  collections:
+    - common_tools.infrastructure
+  
+  vars:
+    # Standard installation configuration
+    notepadplusplus_install_method: "chocolatey"
+    notepadplusplus_version: "latest"
+    notepadplusplus_install_path: "C:\\Program Files\\Notepad++"
+    
+    # Enterprise shortcuts and configuration
+    notepadplusplus_create_shortcut: true
+    notepadplusplus_create_desktop_shortcut: true
+    notepadplusplus_add_to_path: false
+    
+    # File associations for developers
+    notepadplusplus_configure_file_associations: true
+    notepadplusplus_file_associations:
+      - ".txt"
+      - ".log"
+      - ".conf"
+      - ".yml"
+      - ".yaml"
+      - ".json"
+      - ".xml"
+      - ".ini"
+      - ".md"
+      - ".py"
+      - ".js"
+      - ".sh"
+      - ".bat"
+      - ".ps1"
+      - ".cs"
+      - ".java"
+      - ".cpp"
+      - ".sql"
+    
+    # Development-friendly configuration
+    notepadplusplus_font_name: "Consolas"
+    notepadplusplus_font_size: 11
+    
+    # Features
+    notepadplusplus_enable_auto_update: true
+    notepadplusplus_enable_backup: true
+    notepadplusplus_enable_session_backup: true
+    notepadplusplus_enable_plugins: true
+    notepadplusplus_enable_extensions: true
+    
+    # Enterprise logging
+    notepadplusplus_enable_logging: true
+    notepadplusplus_log_dir: "C:\\Logs\\Notepad++"
+    
+    # Backup configuration
+    notepadplusplus_backup_config: true
+    notepadplusplus_config_backup_dir: "C:\\Backups\\Notepad++"
+    
+    # Verification
+    notepadplusplus_verify_installation: true
+  
+  pre_tasks:
+    - name: Collect deployment facts
+      setup:
+        gather_subset:
+          - "!all"
+          - "!min"
+          - "network"
+    
+    - name: Display deployment progress
+      debug:
+        msg:
+          - "================================================"
+          - "Enterprise Notepad++ Deployment"
+          - "================================================"
+          - "Total Servers: {{ groups['all_windows_servers'] | length }}"
+          - "Current Server: {{ inventory_hostname }}"
+          - "Server IP: {{ ansible_default_ipv4.address | default('N/A') }}"
+          - "OS: {{ ansible_distribution }} {{ ansible_distribution_version }}"
+          - "================================================"
+  
+  roles:
+    - notepadplusplus
+  
+  post_tasks:
+    - name: Verify successful installation
+      win_stat:
+        path: "C:\\Program Files\\Notepad++\\notepad++.exe"
+      register: notepadplusplus_verification
+    
+    - name: Check Start Menu shortcut
+      win_stat:
+        path: "{{ ansible_env.APPDATA }}\\Microsoft\\Windows\\Start Menu\\Programs\\Notepad++.lnk"
+      register: startmenu_verification
+    
+    - name: Record installation success
+      set_fact:
+        notepadplusplus_install_status: "{{ 'SUCCESS' if notepadplusplus_verification.stat.exists else 'FAILED' }}"
+    
+    - name: Create server-specific installation report
+      win_shell: |
+        $report = @"
+        Notepad++ Installation Report
+        ==============================
+        Server: {{ inventory_hostname }}
+        Installation Date: $(Get-Date)
+        Status: {{ notepadplusplus_install_status }}
+        Installation Path: C:\Program Files\Notepad++
+        Executable Found: {{ notepadplusplus_verification.stat.exists }}
+        Start Menu Shortcut: {{ startmenu_verification.stat.exists }}
+        Desktop Shortcut: true
+        Log Directory: {{ notepadplusplus_log_dir }}
+        "@ | Out-File -FilePath "{{ notepadplusplus_log_dir }}\installation-report.txt" -Encoding UTF8
+        
+        Write-Output "Report created"
+      when: notepadplusplus_enable_logging | bool
+      ignore_errors: yes
+  
+  handlers:
+    - name: Send deployment notification
+      debug:
+        msg: "Deployment completed for {{ inventory_hostname }}"
+      listen: "deployment_complete"
+
+---
+
+- name: Generate Enterprise Deployment Summary
+  hosts: localhost
+  gather_facts: no
+  collections:
+    - common_tools.infrastructure
+  
+  tasks:
+    - name: Display deployment summary
+      debug:
+        msg:
+          - "================================================"
+          - "Enterprise Notepad++ Deployment Summary"
+          - "================================================"
+          - "Total Servers: {{ groups['all_windows_servers'] | length }}"
+          - "Deployment Status: COMPLETED"
+          - ""
+          - "Configuration Applied:"
+          - "  - Installation Method: Chocolatey"
+          - "  - Version: Latest"
+          - "  - File Associations: Enabled"
+          - "  - Font: Consolas, Size: 11"
+          - "  - Auto-Update: Enabled"
+          - "  - Session Backup: Enabled"
+          - "  - Enterprise Logging: Enabled"
+          - ""
+          - "Next Steps:"
+          - "1. Verify installation on each server"
+          - "2. Test file association functionality"
+          - "3. Review installation logs in C:\\Logs\\Notepad++"
+          - "4. Notify users of new tool availability"
+          - "5. Consider training for advanced features"
+          - ""
+          - "Support Resources:"
+          - "- Notepad++ Documentation: https://notepad-plus-plus.org/docs/"
+          - "- User Guide: https://notepad-plus-plus.org/user-manual/"
+          - "================================================"

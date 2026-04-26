@@ -1,0 +1,245 @@
+#SPDX-License-Identifier: MIT-0
+---
+# tasks file for verification of AD integration
+
+- name: "Verification - Check Windows domain membership"
+  block:
+    - name: "Verification - Verify Windows domain join"
+      win_powershell:
+        script: |
+          $computer = Get-WmiObject Win32_ComputerSystem
+          Write-Host "Domain: $($computer.Domain)"
+          Write-Host "Workgroup: $($computer.Workgroup)"
+          if ($computer.PartOfDomain) {
+            Write-Host "Status: Successfully joined to $($computer.Domain)"
+          } else {
+            Write-Error "Not yet joined to domain"
+          }
+      register: domain_status_win
+      changed_when: false
+      when: ad_is_windows | bool
+
+    - name: "Verification - Verify AD connectivity (Windows)"
+      win_powershell:
+        script: |
+          $domain = Get-ADDomain -Identity "{{ ad_domain }}" -ErrorAction SilentlyContinue
+          if ($domain) {
+            Write-Host "AD Domain: $($domain.Name)"
+            Write-Host "Forest: $($domain.Forest)"
+          }
+      register: ad_check_win
+      ignore_errors: true
+      changed_when: false
+      when: ad_is_windows | bool
+
+  rescue:
+    - name: "Verification - Display Windows domain status error"
+      debug:
+        msg: "Failed to verify Windows domain status: {{ ansible_failed_result.msg }}"
+
+- name: "Verification - Check Linux domain membership"
+  block:
+    - name: "Verification - Verify realm membership"
+      command: "realm list"
+      register: realm_status
+      changed_when: false
+      when: ad_linux_use_sssd | bool
+
+    - name: "Verification - Display realm status"
+      debug:
+        msg: "{{ realm_status.stdout }}"
+      when: 
+        - ad_linux_use_sssd | bool
+        - realm_status.stdout | length > 0
+
+    - name: "Verification - Check Samba domain join"
+      command: "net ads testjoin"
+      register: samba_status
+      ignore_errors: true
+      changed_when: false
+      when: ad_linux_use_winbind | bool
+
+  rescue:
+    - name: "Verification - Display Linux domain status error"
+      debug:
+        msg: "Failed to verify Linux domain status: {{ ansible_failed_result.msg }}"
+
+- name: "Verification - Test AD connectivity"
+  block:
+    - name: "Verification - LDAP connectivity test"
+      wait_for:
+        host: "{{ ad_ad_server }}"
+        port: 389
+        timeout: 5
+      register: ldap_connectivity
+      when: ad_verify_ad_connectivity | bool
+
+    - name: "Verification - LDAPS connectivity test"
+      wait_for:
+        host: "{{ ad_ad_server }}"
+        port: 636
+        timeout: 5
+      ignore_errors: true
+      changed_when: false
+      when: 
+        - ad_verify_ad_connectivity | bool
+        - ad_use_ldaps | bool
+
+  rescue:
+    - name: "Verification - Display connectivity error"
+      debug:
+        msg: "WARNING: AD server connectivity check failed"
+
+- name: "Verification - Test user lookup"
+  block:
+    - name: "Verification - Verify user lookup (Windows)"
+      win_powershell:
+        script: |
+          try {
+            $user = Get-ADUser -Filter {Name -like "{{ ad_ad_test_user }}*"} -ErrorAction Stop
+            Write-Host "User lookup successful: $($user.Name)"
+          } catch {
+            Write-Error "User lookup failed: $_"
+          }
+      register: user_lookup_win
+      ignore_errors: true
+      changed_when: false
+      when: 
+        - ad_is_windows | bool
+        - ad_verify_user_lookup | bool
+
+    - name: "Verification - Verify user lookup (Linux)"
+      command: "getent passwd {{ ad_ad_test_user }}"
+      register: user_lookup_linux
+      ignore_errors: true
+      changed_when: false
+      when: 
+        - ad_is_linux | bool
+        - ad_verify_user_lookup | bool
+
+    - name: "Verification - Display user lookup result"
+      debug:
+        msg: "{{ user_lookup_linux.stdout | default(user_lookup_win.stdout, true) }}"
+
+  rescue:
+    - name: "Verification - Display user lookup error"
+      debug:
+        msg: "User lookup verification failed: {{ ansible_failed_result.msg }}"
+
+- name: "Verification - Test group lookup"
+  block:
+    - name: "Verification - Verify group lookup (Windows)"
+      win_powershell:
+        script: |
+          try {
+            $group = Get-ADGroup -Filter {Name -like "{{ ad_ad_test_group }}*"} -ErrorAction Stop
+            Write-Host "Group lookup successful: $($group.Name)"
+          } catch {
+            Write-Error "Group lookup failed: $_"
+          }
+      register: group_lookup_win
+      ignore_errors: true
+      changed_when: false
+      when: 
+        - ad_is_windows | bool
+        - ad_verify_group_lookup | bool
+
+    - name: "Verification - Verify group lookup (Linux)"
+      command: "getent group {{ ad_ad_test_group }}"
+      register: group_lookup_linux
+      ignore_errors: true
+      changed_when: false
+      when: 
+        - ad_is_linux | bool
+        - ad_verify_group_lookup | bool
+
+    - name: "Verification - Display group lookup result"
+      debug:
+        msg: "{{ group_lookup_linux.stdout | default(group_lookup_win.stdout, true) }}"
+
+  rescue:
+    - name: "Verification - Display group lookup error"
+      debug:
+        msg: "Group lookup verification failed: {{ ansible_failed_result.msg }}"
+
+- name: "Verification - Test Kerberos authentication"
+  block:
+    - name: "Verification - Test kinit (Linux)"
+      shell: |
+        echo "{{ ad_password }}" | kinit -l 1h "{{ ad_username }}@{{ ad_kerberos_realm }}" 2>&1
+        klist
+      no_log: true
+      register: kinit_test
+      ignore_errors: true
+      changed_when: false
+      when: 
+        - ad_is_linux | bool
+        - ad_perform_kerberos_checks | bool
+
+    - name: "Verification - Display Kerberos test result"
+      debug:
+        msg: "Kerberos authentication test passed"
+      when: kinit_test.rc == 0
+
+  rescue:
+    - name: "Verification - Display Kerberos test error"
+      debug:
+        msg: "Kerberos authentication test failed: {{ ansible_failed_result.msg }}"
+
+- name: "Verification - Test sudo access"
+  block:
+    - name: "Verification - Check sudo configuration"
+      command: "sudo -l"
+      register: sudo_test
+      ignore_errors: true
+      changed_when: false
+      when: 
+        - ad_is_linux | bool
+        - ad_verify_sudo_access | bool
+        - ad_configure_sudoers | bool
+
+  rescue:
+    - name: "Verification - Display sudo test error"
+      debug:
+        msg: "Sudo configuration check failed: {{ ansible_failed_result.msg }}"
+
+- name: "Verification - Test SSH access"
+  block:
+    - name: "Verification - Check SSH configuration"
+      command: "sshd -t"
+      register: sshd_test
+      changed_when: false
+      when: 
+        - ad_is_linux | bool
+        - ad_verify_ssh_access | bool
+
+    - name: "Verification - Display SSH configuration test"
+      debug:
+        msg: "SSH configuration is valid"
+      when: sshd_test.rc == 0
+
+  rescue:
+    - name: "Verification - Display SSH test error"
+      debug:
+        msg: "SSH configuration test failed: {{ ansible_failed_result.msg }}"
+
+- name: "Verification - Display integration verification summary"
+  debug:
+    msg: |
+      AD Integration Verification Summary
+      ===================================
+      Domain: {{ ad_domain }}
+      Hostname: {{ ansible_hostname }}
+      
+      Windows Domain Join: {% if ad_is_windows and domain_status_win.stdout is defined %}Verified{% else %}N/A{% endif %}
+      Linux Realm Membership: {% if ad_is_linux and realm_status.stdout is defined %}Verified{% else %}N/A{% endif %}
+      
+      AD Connectivity: {{ 'Success' if ldap_connectivity is succeeded else 'Failed' }}
+      User Lookup: {{ 'Success' if user_lookup_win is succeeded or user_lookup_linux is succeeded else 'Not Tested' }}
+      Group Lookup: {{ 'Success' if group_lookup_win is succeeded or group_lookup_linux is succeeded else 'Not Tested' }}
+      
+      Verify the following manually if needed:
+      1. User SSH access: ssh username@{{ ansible_fqdn }}
+      2. Sudo access: sudo -u user id
+      3. Home directory creation: ls -la /home/username
+      4. Kerberos tickets: klist

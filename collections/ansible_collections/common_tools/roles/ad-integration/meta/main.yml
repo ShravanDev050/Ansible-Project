@@ -1,0 +1,67 @@
+#SPDX-License-Identifier: MIT-0
+---
+galaxy_info:
+  author: "Your Organization"
+  description: "Active Directory integration role for joining Windows and Linux systems to existing AD domains"
+  company: "Your Company"
+  license: "MIT"
+  min_ansible_version: 2.9
+  
+  galaxy_tags:
+    - "active-directory"
+    - "ad"
+    - "ad-integration"
+    - "domain-join"
+    - "sssd"
+    - "winbind"
+    - "kerberos"
+    - "linux"
+    - "windows"
+    - "authentication"
+
+  platforms:
+    - name: "Windows Server"
+      versions:
+        - "2012"
+        - "2012 R2"
+        - "2016"
+        - "2019"
+        - "2022"
+    
+    - name: "Windows"
+      versions:
+        - "7"
+        - "8"
+        - "8.1"
+        - "10"
+        - "11"
+    
+    - name: "Ubuntu"
+      versions:
+        - "16.04"
+        - "18.04"
+        - "20.04"
+        - "22.04"
+    
+    - name: "Debian"
+      versions:
+        - "9"
+        - "10"
+        - "11"
+        - "12"
+    
+    - name: "CentOS"
+      versions:
+        - "7"
+        - "8"
+        - "9"
+    
+    - name: "RedHat"
+      versions:
+        - "7"
+        - "8"
+        - "9"
+
+dependencies: []
+
+role_name: "ad-integration"
