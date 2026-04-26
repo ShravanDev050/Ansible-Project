@@ -1,0 +1,47 @@
+name: CI/CD - Build and Publish Collection
+on:
+  push:
+    tags:
+      - '*'  # Triggers when you push a new tag like v1.0.0
+
+jobs:
+  test:
+    name: Run Sanity Checks
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install Ansible
+        run: pip install ansible-core
+
+      - name: Run Ansible-lint
+        uses: ansible/ansible-lint-action@main
+
+      - name: Perform Sanity Testing
+        uses: ansible-community/ansible-test-gh-action@release/v1
+        with:
+          ansible-core-version: stable-2.16
+          testing-type: sanity
+
+  publish:
+    name: Build and Publish to Galaxy
+    needs: test
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Build Collection
+        id: build
+        uses: ansible-community/github-action-build-collection@main
+
+      - name: Publish to Ansible Galaxy
+        uses: qsypoq/ansible-galaxy-publish-action@v1
+        with:
+          galaxy_token: ${{ secrets.GALAXY_API_KEY }}
