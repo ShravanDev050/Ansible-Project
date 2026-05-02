@@ -4,7 +4,6 @@ on:
     - cron: '39 20 * * *'
   push:
     branches: [ "main" ]
-    # Publish semver tags as releases.
     tags: [ 'v*.*.*' ]
   pull_request:
     branches: [ "main" ]
@@ -21,14 +20,19 @@ jobs:
         uses: actions/setup-python@v5
         with:
           python-version: '3.11'
+          cache: 'pip'
 
       - name: Install Dependencies
         run: |
           pip install ansible-core ansible-lint
-          # Install all required collections (Windows + your requirements.yml)
+          # Installing all required collections into the runner environment
           ansible-galaxy collection install ansible.windows community.windows
-          ansible-galaxy collection install -r requirements.yml
+          if [ -f requirements.yml ]; then
+            ansible-galaxy collection install -r requirements.yml
+          fi
+
       - name: Run Ansible-lint
+        # This now sees all collections installed in the step above
         run: ansible-lint
 
       - name: Perform Sanity Testing
@@ -40,6 +44,7 @@ jobs:
   publish:
     name: Build and Publish to Galaxy
     needs: test
+    if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v')
     runs-on: ubuntu-latest
     steps:
       - name: Checkout Code
