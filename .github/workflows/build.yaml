@@ -22,20 +22,12 @@ jobs:
         with:
           python-version: '3.11'
 
-      - name: Install Ansible
-        run: pip install ansible-core
-
-      - name: Install Windows Collections
-        run: ansible-galaxy collection install ansible.windows community.windows
-
-      - name: Install Ansible Collections
-        run: ansible-galaxy collection install -r requirements.yml
-
-      - name: Install dependencies
+      - name: Install Dependencies
         run: |
-          pip install ansible-lint
+          pip install ansible-core ansible-lint
+          # Install all required collections (Windows + your requirements.yml)
+          ansible-galaxy collection install ansible.windows community.windows
           ansible-galaxy collection install -r requirements.yml
-
       - name: Run Ansible-lint
         run: ansible-lint
 
