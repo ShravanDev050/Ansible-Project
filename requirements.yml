@@ -1,0 +1,7 @@
+---
+collections:
+  - name: ansible.windows
+  - name: ansible.posix
+  - name: community.general
+  - name: community.windows
+  - name: microsoft.ad  # Replaces the deprecated win_domain_membership
