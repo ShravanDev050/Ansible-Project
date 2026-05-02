@@ -26,7 +26,7 @@ jobs:
         run: pip install ansible-core
 
       - name: Install Ansible Collections
-        run: ansible-galaxy collection install ansible.windows
+        run: ansible-galaxy collection install -r requirements.yml
 
       - name: Run Ansible-lint
         uses: ansible/ansible-lint@main
