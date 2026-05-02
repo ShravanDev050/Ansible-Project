@@ -26,7 +26,7 @@ jobs:
         run: pip install ansible-core
 
       - name: Run Ansible-lint
-        uses: ansible/ansible-lint-action@main
+        uses: ansible/ansible-lint@main
 
       - name: Perform Sanity Testing
         uses: ansible-community/ansible-test-gh-action@release/v1
