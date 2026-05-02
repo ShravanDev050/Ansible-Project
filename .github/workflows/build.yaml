@@ -24,15 +24,14 @@ jobs:
       - name: Install Dependencies
         run: |
           pip install ansible-core ansible-lint
-          # Installing all required collections into the runner environment
-          ansible-galaxy collection install ansible.windows community.windows
-          if [ -f requirements.yml ]; then
-            ansible-galaxy collection install -r requirements.yml
-          fi
+          # Install to a specific local folder
+          ansible-galaxy collection install ansible.windows community.windows microsoft.ad -p ./collections
 
       - name: Run Ansible-lint
-        # This now sees all collections installed in the step above
         run: ansible-lint
+        env:
+          # This tells the linter exactly where to look for the code
+          ANSIBLE_COLLECTIONS_PATH: ./collections
 
       - name: Perform Sanity Testing
         uses: ansible-community/ansible-test-gh-action@release/v1
